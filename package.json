@@ -1,0 +1,19 @@
+{
+  "name": "robot-trader-office",
+  "version": "0.1.0",
+  "description": "Escritório virtual 3D isométrico para monitorar robôs de trading (MT5, NinjaTrader)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 8080 --host",
+    "aggregator": "node server/aggregator.mjs"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}

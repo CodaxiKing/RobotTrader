@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RobotTrader · Escritório</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23111'/><path d='M16 4l10 6v12l-10 6-10-6V10z' fill='none' stroke='%23ffc400' stroke-width='2.5'/></svg>" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <header id="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="title" id="title"></div>
+          <div class="subtitle" id="subtitle"></div>
+        </div>
+      </div>
+      <div class="total">
+        <div class="total-label">RESULTADO · ABERTOS + FECHADOS</div>
+        <div class="total-value" id="total-value">US$ 0,00</div>
+      </div>
+      <div class="seg" id="mode-seg" role="group" aria-label="Filtro de resultado">
+        <button data-mode="closed">Fechados</button>
+        <button data-mode="open">Abertos</button>
+        <button data-mode="both" class="on">Ambos</button>
+      </div>
+      <div class="stats">
+        <span class="chip"><i class="dot working"></i><b id="count-working">0</b> em operação</span>
+        <span class="chip"><i class="dot idle"></i><b id="count-idle">0</b> em descanso</span>
+        <span class="chip clock" id="clock">--:--:--</span>
+        <span class="chip live" id="live-chip"><i class="dot live-dot"></i><span id="live-label">conectando…</span></span>
+      </div>
+    </header>
+
+    <nav id="floorbar" aria-label="Andares"></nav>
+    <div id="viewbtns"><button id="btn-list">☰ Robôs</button><button id="btn-screens">▦ Telas</button></div>
+    <aside id="sidebar"></aside>
+    <div id="infocard" class="hidden"></div>
+
+    <div id="overlay" class="hidden">
+      <div class="ov-panel">
+        <div class="ov-top"><span class="ov-title"></span><button class="ov-close" title="Fechar">×</button></div>
+        <div class="ov-body"></div>
+      </div>
+    </div>
+
+    <div id="hint">Arraste para girar · Scroll para zoom · Botão direito para mover · Clique em um robô ou monitor · <kbd>R</kbd> reseta a vista</div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

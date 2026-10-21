@@ -1,0 +1,6 @@
+node_modules
+dist
+public/status.json
+public/status.json.tmp
+*.log
+.DS_Store
