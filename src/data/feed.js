@@ -794,6 +794,8 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     // o primeiro tick (que já distribui o backlog) roda logo depois de quem chamou terminar de montar a UI
     start() { if (!timer) { timer = setInterval(tick, intervalMs); queueMicrotask(tick); } },
+    // avança n rodadas na hora, sem relógio (testes e depuração)
+    step(n = 1) { for (let i = 0; i < n; i++) tick(); },
     stop() { clearInterval(timer); timer = null; },
   };
   return api;
