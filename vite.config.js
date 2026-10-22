@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: { '/api': MOTOR, '/status.json': MOTOR },
+    // o motor grava o estado e a conta Claude (motor/conta-claude) o tempo todo; não é código da tela
+    watch: { ignored: ['**/motor/**'] },
   },
   build: { chunkSizeWarningLimit: 1200 },
 });

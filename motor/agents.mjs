@@ -134,7 +134,9 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
         cwd,
         model,
         allowedTools: cfg.tools,
-        disallowedTools: cfg.deny,
+        // terminal só pelo Bash (Git Bash no Windows): a ferramenta PowerShell quebra aqui ("Linha de comando muito
+        // longa") e passaria por fora das travas de git acima, que são regras de Bash
+        disallowedTools: [...cfg.deny, 'PowerShell'],
         permissionMode: role === 'dev' ? 'acceptEdits' : 'default',
         // o escritório e os relatórios são em português; sem isto os agentes respondem em inglês
         systemPrompt: { type: 'preset', preset: 'claude_code', append: `${cfg.prompt}
