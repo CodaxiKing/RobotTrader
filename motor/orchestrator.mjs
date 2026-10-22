@@ -458,6 +458,8 @@ export function createOrchestrator(config) {
   // segurança, sem rodar o dev de novo; sem nada salvo, o dev recomeça.
   function recover() {
     for (const t of s.board) {
+      // travada espera você destravar, também depois de um reinício
+      if (t.blocked) continue;
       // espera o plano renovar com o mesmo robô
       if (t.parked) {
         const id = t.parked.robotId;
