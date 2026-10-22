@@ -10,6 +10,7 @@ import {
   AREA, FOCUS, SEVERITY, pct, drawCanvasWall, drawMonitorWork, drawMonitorInfo, drawWallStat, drawWallClock, drawWallChart, drawWallBoard, drawWallList, drawLogo, drawRug,
 } from './screens.js';
 import { OFFICE } from './data/robots.js';
+import { planPath } from './paths.js';
 
 const STEP = 4.8;       // distância entre mesas (x)
 const ZONE_MIN = 12;    // largura mínima de uma zona: cabem os dois painéis de parede
@@ -80,7 +81,7 @@ function sofaLayout(zone, slot) {
 
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 
-export function buildWorld(scene, floors, robots, { feed }) {
+export function buildWorld(scene, floors, robots, { feed, camera }) {
   const getState = (id) => feed.getState(id);
   const { zones, meet, bands, FX, FZ } = zoneLayout(floors, robots);
   const floorMap = new Map();
@@ -359,6 +360,7 @@ export function buildWorld(scene, floors, robots, { feed }) {
       const actor = {
         id: r.id, robot: r, floor: fl, bot, screens, el, label,
         desk: { x: d.x, z: d.z + 1.25, rot: Math.PI, band: zone.band },
+        deskPos: new THREE.Vector3(d.x, 1.8, d.z),
         rest: { x: sofa.x, z: sofa.z, rot: 0, band: zone.band },
         band: zone.band,
         pos: new THREE.Vector3(), path: [], rot: 0, seated: false, status: null,
@@ -382,20 +384,40 @@ export function buildWorld(scene, floors, robots, { feed }) {
     a.status = status;
     a.seat = seat;
     const target = targetOf(a);
-    const fromAisle = bands[a.band].oz + AISLE_Z;
-    const toAisle = bands[target.band].oz + AISLE_Z;
-    const pts = [];
-    if (Math.abs(a.pos.z - fromAisle) > 0.05) pts.push({ x: a.pos.x, z: fromAisle });
-    if (target.band !== a.band) {
-      // troca de ala pelo corredor junto à parede esquerda
-      const sideX = -FX + SIDE / 2;
-      pts.push({ x: sideX, z: fromAisle }, { x: sideX, z: toAisle });
-    }
-    if (Math.abs((pts.at(-1)?.x ?? a.pos.x) - target.x) > 0.05) pts.push({ x: target.x, z: toAisle });
-    pts.push({ x: target.x, z: target.z, final: true });
-    a.path = pts;
+    a.path = planPath({ x: a.pos.x, z: a.pos.z, band: a.band }, target, pathLayout);
     a.band = target.band;
   }
+  const pathLayout = { aisles: bands.map((b) => b.oz + AISLE_Z), sideX: -FX + SIDE / 2 };
+
+  // ── desempenho: só redesenha o que mudou e está na tela; o resto fica marcado para quando aparecer ──
+  const frustum = new THREE.Frustum();
+  const viewProj = new THREE.Matrix4();
+  const sphere = new THREE.Sphere();
+  function refreshFrustum() {
+    if (!camera) return;
+    camera.updateMatrixWorld();
+    viewProj.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(viewProj);
+  }
+  const onScreen = (pos, radius) => {
+    if (!camera) return true;
+    sphere.center.copy(pos);
+    sphere.radius = radius;
+    return frustum.intersectsSphere(sphere);
+  };
+  const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+  function drawMonitors(a, view) {
+    const [c1, c2] = a.screens;
+    drawMonitorWork(c1.ctx, c1.w, c1.h, view); c1.tex.needsUpdate = true;
+    drawMonitorInfo(c2.ctx, c2.w, c2.h, view); c2.tex.needsUpdate = true;
+    a.dirty = false;
+  }
+  function drawPanel(p) {
+    p.draw(p.ct.ctx, p.ct.w, p.ct.h); p.ct.tex.needsUpdate = true;
+    p.dirty = false;
+  }
+  let frame = 0;
+  for (const p of panels.values()) { p.center = p.ct.mesh.getWorldPosition(new THREE.Vector3()); p.radius = p.ct.mesh.geometry.parameters.width / 2 + 0.5; }
 
   let currentZone = null;
   const world = {
@@ -407,6 +429,10 @@ export function buildWorld(scene, floors, robots, { feed }) {
 
     // aplica o estado atual do feed nas telas, balões e destino de cada robô
     sync() {
+      refreshFrustum();
+      // assinaturas do board e do canvas: o monitor do P.O e do CANVAS_01 só muda quando elas mudam
+      const boardSig = feed.board.map((t) => t.column[0]).join('');
+      const canvasSig = feed.canvas ? feed.canvas.screens.map((sc) => (sc.outdated ? 'o' : sc.status[0])).join('') : '';
       for (const a of actors.values()) {
         const s = getState(a.id);
         const task = s.taskId ? feed.task(s.taskId) : null;
@@ -416,32 +442,40 @@ export function buildWorld(scene, floors, robots, { feed }) {
         // indicador sobre o robô: pausado, em reunião, travado ou dormindo
         const stuck = /^Aguardando/.test(s.activity) || (task && task.rework >= 2 && s.status !== 'meeting');
         const flag = s.paused || feed.paused ? ['⏸', 'paused'] : s.status === 'meeting' ? ['💬', 'meeting'] : stuck ? ['⚠', 'stuck'] : !working ? ['z', 'sleep'] : ['', ''];
-        a.flagEl.textContent = flag[0];
-        a.flagEl.className = `b-flag ${flag[1]}`;
-        a.taskEl.textContent = task ? `${task.id} · ${s.status === 'meeting' ? 'reunião' : pct(s.progress)}` : working ? pct(s.progress) : s.activity;
+        setText(a.flagEl, flag[0]);
+        if (a.flagEl.className !== `b-flag ${flag[1]}`) a.flagEl.className = `b-flag ${flag[1]}`;
+        setText(a.taskEl, task ? `${task.id} · ${s.status === 'meeting' ? 'reunião' : pct(s.progress)}` : working ? pct(s.progress) : s.activity);
         a.taskEl.style.color = task ? AREA[task.area].color : '';
         const busy = working || s.status === 'meeting';
-        a.activityEl.textContent = busy ? s.activity : '';
+        setText(a.activityEl, busy ? s.activity : '');
         a.activityEl.style.display = busy ? '' : 'none';
         a.el.classList.toggle('rest', !busy);
         a.dotEl.style.background = working ? '#4ade80' : '#6b7090';
-        const view = { s, robot: a.robot, task, board: feed.board, canvas: feed.canvas };
-        const [c1, c2] = a.screens;
-        drawMonitorWork(c1.ctx, c1.w, c1.h, view); c1.tex.needsUpdate = true;
-        drawMonitorInfo(c2.ctx, c2.w, c2.h, view); c2.tex.needsUpdate = true;
+        const key = [s.status, s.activity, s.taskId, Math.round(s.progress * 20), task?.commits.length, task?.findings?.length, s.done, s.paused, s.piece,
+          a.robot.kind === 'po' ? boardSig : '', a.robot.kind === 'canvas' ? canvasSig : ''].join('|');
+        if (key !== a.key) { a.key = key; a.dirty = true; }
+        a.view = { s, robot: a.robot, task, board: feed.board, canvas: feed.canvas };
+        if (a.dirty && onScreen(a.deskPos, 3)) drawMonitors(a, a.view);
       }
       for (const p of panels.values()) {
         if (p.id === 'clock') continue;
-        p.draw(p.ct.ctx, p.ct.w, p.ct.h); p.ct.tex.needsUpdate = true;
+        p.dirty = true;
+        if (onScreen(p.center, p.radius)) drawPanel(p);
       }
     },
 
     tickClock() {
       const p = panels.get('clock');
-      p.draw(p.ct.ctx, p.ct.w, p.ct.h); p.ct.tex.needsUpdate = true;
+      if (onScreen(p.center, p.radius)) drawPanel(p);
     },
 
     update(t, dt) {
+      // a cada ~1/4 s, o que mudou fora da tela e agora apareceu (a câmera andou) é redesenhado
+      if (++frame % 15 === 0) {
+        refreshFrustum();
+        for (const a of actors.values()) if (a.dirty && a.view && onScreen(a.deskPos, 3)) drawMonitors(a, a.view);
+        for (const p of panels.values()) if (p.dirty && onScreen(p.center, p.radius)) drawPanel(p);
+      }
       for (const a of actors.values()) {
         let mode;
         if (a.path.length) {

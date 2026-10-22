@@ -79,7 +79,7 @@ composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window
 composer.addPass(new OutputPass());
 
 // ── mundo ──
-const world = buildWorld(scene, FLOORS, ROBOTS, { feed });
+const world = buildWorld(scene, FLOORS, ROBOTS, { feed, camera });
 
 // ── vistas ──  o salão inteiro, ou uma zona (time) enquadrada
 // Na isométrica, largura e profundidade do trecho entram juntas na largura da tela.
