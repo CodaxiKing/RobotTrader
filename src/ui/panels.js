@@ -310,6 +310,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
         <b>${esc(t.id)} · ${esc(t.title)}</b>
         <small>${AREA[t.area].label} · ${esc(COLUMNS.find((c) => c.id === t.column)?.label || t.column)} · <code>${esc(t.branch)}</code>${t.cost ? ` · ${usd(t.cost)}` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${prLink(t.pr)}</small>
       </div>
+      ${t.blocked && feed.unblock ? `<div class="task-blocked"><span>Task parada: ${t.rework > 1 ? `voltou ${t.rework} vezes` : 'um robô travou'}. Veja a linha do tempo e destrave quando quiser que siga.</span><button data-unblock="${esc(t.id)}">Destravar e tentar de novo</button></div>` : ''}
       <ol class="timeline">${(t.timeline || []).map((e) => `<li><time>${fmtTime(new Date(e.ts))}</time><b>${e.robotId === 'VOCÊ' ? 'VOCÊ' : who(e.robotId)}</b> ${esc(e.text)}</li>`).join('')}</ol>
       ${t.commits?.length ? `<div class="ov-floor">Commits</div><ul class="changes one">${t.commits.map((c) => `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.message)}</li>`).join('')}</ul>` : ''}`;
   }

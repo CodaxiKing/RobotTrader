@@ -29,6 +29,10 @@
         <span class="chip"><i class="dot idle"></i><b id="count-idle">0</b> livres</span>
         <button class="chip budget" id="budget" title="Gasto de hoje com os agentes · abre as métricas"><span id="budget-label">US$ 0,00</span><i class="budget-bar"><i id="budget-fill"></i></i></button>
         <button class="chip plan" id="plan" hidden title="Quanto ainda resta do plano Claude dos robôs"><span id="plan-label">Plano</span><i class="budget-bar"><i id="plan-session"></i></i><i class="budget-bar"><i id="plan-weekly"></i></i></button>
+        <div class="chip mode" id="mode" hidden role="group" aria-label="Ritmo do escritório">
+          <button data-mode="one" title="Uma task por vez; depois da entrega o escritório pausa para você revisar">1 por 1</button>
+          <button data-mode="all" title="Cada dev livre pega a próxima task da área dele, sem pausa automática">Todos</button>
+        </div>
         <button class="chip action" id="btn-pause" title="Pausar ou retomar todos os robôs">⏸ Pausar</button>
         <button class="chip action" id="btn-notify" title="Avisos do navegador">🔔</button>
         <button class="chip action" id="btn-account" title="Conta Claude que os robôs usam">👤 <span id="account-label">Conta Claude</span></button>

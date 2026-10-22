@@ -198,6 +198,9 @@ function renderSummary() {
   // plano Claude
   const waiting = renderPlan(feed.plan);
   // pausa (a espera do plano aparece na mesma faixa, mas volta sozinha: sem botão de continuar)
+  // ritmo: 1 por 1 ou todos (só com o motor)
+  $('mode').hidden = !feed.setMode || !feed.mode;
+  $('mode').querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === feed.mode));
   $('btn-pause').textContent = feed.paused ? '▶ Continuar' : '⏸ Pausar';
   $('btn-pause').classList.toggle('on', !!feed.paused);
   $('paused-banner').hidden = !feed.paused && !waiting;
@@ -239,6 +242,12 @@ function renderPlan(plan) {
 }
 $('plan').onclick = () => { openPanel('account'); refreshAccount(); };
 $('btn-pause').onclick = () => feed.setPaused(!feed.paused);
+$('mode').onclick = (e) => {
+  const mode = e.target.closest('[data-mode]')?.dataset.mode;
+  if (!mode || mode === feed.mode) return;
+  feed.setMode(mode);
+  toast({ level: 'info', text: mode === 'one' ? 'Modo 1 por 1: as próximas tasks começam uma de cada vez.' : 'Todos trabalhando: cada dev livre pega a próxima task da área dele.' });
+};
 $('paused-resume').onclick = () => feed.setPaused(false);
 $('paused-budget').onclick = () => feed.setBudget((feed.budget || OFFICE.dailyBudgetUsd) + 10);
 $('budget').onclick = () => openPanel('metrics');
@@ -413,6 +422,12 @@ ovBody.addEventListener('click', async (e) => {
   const copy = e.target.closest('[data-copy]');
   if (copy) {
     try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = 'Copiado ✔'; } catch { copy.textContent = 'Não deu para copiar'; }
+    return;
+  }
+  const unblock = e.target.closest('[data-unblock]');
+  if (unblock) {
+    unblock.disabled = true;
+    await feed.unblock(unblock.dataset.unblock);
     return;
   }
   if (e.target.closest('[data-reset]')) {

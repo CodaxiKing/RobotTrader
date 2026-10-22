@@ -63,6 +63,9 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     setRobotPaused: (id, paused) => act('robot-pause', { id, paused }),
     setBudget: (usd) => act('budget', { usd }),
     prioritize: (taskId, beforeId) => act('prioritize', { taskId, beforeId }),
+    unblock: (taskId) => act('unblock', { taskId }),
+    // ritmo do escritório: 'one' (1 por 1) ou 'all' (todos trabalhando)
+    setMode: (mode) => act('mode', { mode }),
     ask: async (robotId, text) => (await post('ask', { robotId, text })).answer,
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     start() {
@@ -97,6 +100,7 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     api.budget = num(data.budget);
     api.plan = data.plan || null;
     api.ai = data.ai || null;
+    api.mode = data.mode || null;
     api.meeting = data.meeting || null;
     Object.assign(spend, { today: num(data.spend?.today), series: list(data.spend?.series).map(num) });
 

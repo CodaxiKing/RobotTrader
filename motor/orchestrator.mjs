@@ -28,6 +28,9 @@ export function createOrchestrator(config) {
   // IA dos robôs: Claude (Agent SDK) ou OpenCode, com o modelo escolhido para cada um; troca pelo escritório
   s.ai ||= { provider: config.ai?.provider || 'claude', models: { claude: config.model, opencode: config.ai?.opencodeModel || 'opencode/big-pickle' } };
   const currentAi = () => ({ provider: s.ai.provider, model: s.ai.models[s.ai.provider] });
+  // ritmo: 'one' = uma task por vez (e a pausa do piloto); 'all' = cada dev livre pega uma task da área dele
+  s.mode ||= config.limits?.maxActive === 1 ? 'one' : 'all';
+  const maxActive = () => (s.mode === 'one' ? 1 : config.limits?.maxParallel || Infinity);
   const aiLabel = () => `${s.ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${currentAi().model}`;
   const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit, ai: currentAi });
   const repoOf = (task) => config.repos[task.area];
@@ -278,12 +281,32 @@ export function createOrchestrator(config) {
         state.step(task, secId, `Falha ${serious[0]?.severity || 'média'}: ${serious[0]?.title || 'ver parecer'} · voltou para ${task.dev}`);
         await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): voltou para correção**\n\n${serious.map((f) => `- **${f.severity}** · ${f.title}${f.file ? ` (\`${f.file}\`)` : ''}\n  ${f.fix}`).join('\n')}`);
         if (serious.some((f) => f.severity === 'alta')) state.alert('danger', `Falha alta em ${task.id}: ${serious[0].title}`, { robotId: secId, taskId: task.id, panel: 'board' });
+        if (stopIfLooping(task, secId)) return;
         return meeting(task, secId);
       }
       task.column = 'qa';
       await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): ok**${task.findings.length ? `\n\n${task.findings.length} falha(s) apontadas antes foram corrigidas.` : ''}${(verdict.findings || []).length ? `\n\nObservações de gravidade baixa:\n${verdict.findings.map((f) => `- ${f.title}: ${f.fix}`).join('\n')}` : ''}`);
       state.step(task, secId, `Segurança ok${task.findings.length ? ` · ${task.findings.length} falha(s) corrigida(s)` : ''} · mandou para o QA`);
     });
+  }
+
+  // task que vai e volta sem sair do lugar (ex.: o QA sem conseguir rodar os testes) para e espera você,
+  // em vez de gastar a cada volta; "Destravar" na linha do tempo da task dá mais N voltas
+  function stopIfLooping(task, robotId) {
+    const max = config.limits?.maxRework ?? 5;
+    if (task.rework - (task.reworkBase || 0) < max) return false;
+    task.blocked = true;
+    state.step(task, robotId, `Voltou ${task.rework} vezes: parei a task para você olhar antes de gastar mais`);
+    state.alert('danger', `${task.id} voltou ${task.rework} vezes e foi parada para você olhar: ${task.title}`, { robotId, taskId: task.id, panel: 'board' });
+    return true;
+  }
+  function unblock(taskId) {
+    const t = state.task(taskId);
+    if (!t?.blocked) return false;
+    Object.assign(t, { blocked: false, reworkBase: t.rework });
+    state.decision(`Destravou ${t.id}`, t.id);
+    t.timeline.push({ ts: now(), robotId: 'VOCÊ', text: 'Destravou a task: segue de onde parou' });
+    return true;
   }
 
   function test(task, qaId) {
@@ -299,6 +322,7 @@ export function createOrchestrator(config) {
         task.rework++;
         state.step(task, qaId, `Reprovou: ${r.summary}`);
         await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): voltou para correção** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}\n\n${task.problems.map((p) => `- ${p}`).join('\n')}`);
+        if (stopIfLooping(task, qaId)) return;
         return meeting(task, qaId);
       }
       await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): aprovado** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}`);
@@ -320,7 +344,8 @@ export function createOrchestrator(config) {
       extras.onMerged(task);
       state.step(task, qaId, `Aprovou · merge${task.pr?.number ? ` do PR #${task.pr.number}` : ''} em ${base} · relatório pronto`);
       mergesThisRun++;
-      const stopAt = config.limits?.pauseAfterMerges;
+      // a pausa do piloto (revise antes da próxima) só vale no modo 1 por 1
+      const stopAt = s.mode === 'one' && config.limits?.pauseAfterMerges;
       if (stopAt && mergesThisRun >= stopAt) {
         setPaused(true, `piloto: ${mergesThisRun} entrega(s) em ${base}; revise e continue quando quiser`);
         state.alert('warn', `Piloto concluído: ${task.id} "${task.title}" foi para ${base}. Revise o merge e clique em Continuar.`, { taskId: task.id, panel: 'reports' });
@@ -407,8 +432,9 @@ export function createOrchestrator(config) {
       const back = s.board.find((t) => ready(t) && t.column === 'rework' && t.dev === dev.id);
       if (back) develop(back, dev.id);
     }
-    const active = s.board.filter((t) => ['refining', 'dev', 'security', 'qa', 'rework'].includes(t.column)).length;
-    if (!busy('PO_01') && active < (config.limits?.maxActive || Infinity)) {
+    // task travada esperando você não ocupa a vaga
+    const active = s.board.filter((t) => !t.blocked && ['refining', 'dev', 'security', 'qa', 'rework'].includes(t.column)).length;
+    if (!busy('PO_01') && active < maxActive()) {
       const free = byKind('dev').filter((d) => !busy(d.id) && !s.board.some((t) => t.column === 'rework' && t.dev === d.id));
       const next = s.board.find((t) => ready(t) && t.column === 'todo' && free.some((d) => d.area === t.area));
       if (next) refine(next, free.find((d) => d.area === next.area).id);
@@ -432,6 +458,8 @@ export function createOrchestrator(config) {
   // segurança, sem rodar o dev de novo; sem nada salvo, o dev recomeça.
   function recover() {
     for (const t of s.board) {
+      // travada espera você destravar, também depois de um reinício
+      if (t.blocked) continue;
       // espera o plano renovar com o mesmo robô
       if (t.parked) {
         const id = t.parked.robotId;
@@ -552,6 +580,14 @@ export function createOrchestrator(config) {
     },
     actions: {
       decide,
+      unblock: (taskId) => { const ok = unblock(taskId); state.changed(); return ok; },
+      setMode(mode) {
+        if (!['one', 'all'].includes(mode) || s.mode === mode) return s.mode;
+        s.mode = mode;
+        state.decision(mode === 'one' ? 'Escritório no modo 1 por 1: uma task por vez' : 'Escritório com todos trabalhando: cada dev livre pega uma task');
+        state.push('OPS_01', mode === 'one' ? 'Modo 1 por 1: as próximas tasks começam uma de cada vez (quem já está no meio termina)' : 'Todos trabalhando: cada dev livre pega a próxima task da área dele');
+        return s.mode;
+      },
       aiInfo,
       setAi,
       setPaused: (v) => setPaused(v),
