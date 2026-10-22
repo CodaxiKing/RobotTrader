@@ -113,7 +113,9 @@ export function createAgents({ model, budgets, dryRun, log }) {
         allowedTools: cfg.tools,
         disallowedTools: cfg.deny,
         permissionMode: role === 'dev' ? 'acceptEdits' : 'default',
-        systemPrompt: { type: 'preset', preset: 'claude_code', append: cfg.prompt },
+        // o escritório e os relatórios são em português; sem isto os agentes respondem em inglês
+        systemPrompt: { type: 'preset', preset: 'claude_code', append: `${cfg.prompt}
+Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` },
         // carrega o CLAUDE.md e as configurações do próprio repositório do PetLive
         settingSources: ['project'],
         maxTurns: cfg.maxTurns,
