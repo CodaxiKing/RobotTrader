@@ -278,12 +278,32 @@ export function createOrchestrator(config) {
         state.step(task, secId, `Falha ${serious[0]?.severity || 'média'}: ${serious[0]?.title || 'ver parecer'} · voltou para ${task.dev}`);
         await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): voltou para correção**\n\n${serious.map((f) => `- **${f.severity}** · ${f.title}${f.file ? ` (\`${f.file}\`)` : ''}\n  ${f.fix}`).join('\n')}`);
         if (serious.some((f) => f.severity === 'alta')) state.alert('danger', `Falha alta em ${task.id}: ${serious[0].title}`, { robotId: secId, taskId: task.id, panel: 'board' });
+        if (stopIfLooping(task, secId)) return;
         return meeting(task, secId);
       }
       task.column = 'qa';
       await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): ok**${task.findings.length ? `\n\n${task.findings.length} falha(s) apontadas antes foram corrigidas.` : ''}${(verdict.findings || []).length ? `\n\nObservações de gravidade baixa:\n${verdict.findings.map((f) => `- ${f.title}: ${f.fix}`).join('\n')}` : ''}`);
       state.step(task, secId, `Segurança ok${task.findings.length ? ` · ${task.findings.length} falha(s) corrigida(s)` : ''} · mandou para o QA`);
     });
+  }
+
+  // task que vai e volta sem sair do lugar (ex.: o QA sem conseguir rodar os testes) para e espera você,
+  // em vez de gastar a cada volta; "Destravar" na linha do tempo da task dá mais N voltas
+  function stopIfLooping(task, robotId) {
+    const max = config.limits?.maxRework ?? 5;
+    if (task.rework - (task.reworkBase || 0) < max) return false;
+    task.blocked = true;
+    state.step(task, robotId, `Voltou ${task.rework} vezes: parei a task para você olhar antes de gastar mais`);
+    state.alert('danger', `${task.id} voltou ${task.rework} vezes e foi parada para você olhar: ${task.title}`, { robotId, taskId: task.id, panel: 'board' });
+    return true;
+  }
+  function unblock(taskId) {
+    const t = state.task(taskId);
+    if (!t?.blocked) return false;
+    Object.assign(t, { blocked: false, reworkBase: t.rework });
+    state.decision(`Destravou ${t.id}`, t.id);
+    t.timeline.push({ ts: now(), robotId: 'VOCÊ', text: 'Destravou a task: segue de onde parou' });
+    return true;
   }
 
   function test(task, qaId) {
@@ -299,6 +319,7 @@ export function createOrchestrator(config) {
         task.rework++;
         state.step(task, qaId, `Reprovou: ${r.summary}`);
         await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): voltou para correção** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}\n\n${task.problems.map((p) => `- ${p}`).join('\n')}`);
+        if (stopIfLooping(task, qaId)) return;
         return meeting(task, qaId);
       }
       await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): aprovado** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}`);
@@ -552,6 +573,7 @@ export function createOrchestrator(config) {
     },
     actions: {
       decide,
+      unblock: (taskId) => { const ok = unblock(taskId); state.changed(); return ok; },
       aiInfo,
       setAi,
       setPaused: (v) => setPaused(v),

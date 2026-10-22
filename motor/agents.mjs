@@ -3,7 +3,27 @@
 // Cada papel tem as suas ferramentas: só o dev edita arquivos; segurança e QA leem e rodam comandos.
 // Commit, push e merge ficam com o orquestrador, nunca com o agente.
 import { query, USAGE_LIMIT_ERROR_PREFIXES } from '@anthropic-ai/claude-agent-sdk';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { createOpenCode } from './opencode.mjs';
+
+// No Windows o Claude Code só oferece o Bash quando acha o Git Bash; sem ele sobra a PowerShell, que quebra
+// aqui ("Linha de comando muito longa") e os agentes ficam sem terminal. Instalação por usuário
+// (AppData\Local\Programs\Git) fica fora de onde ele procura, então o caminho sai do git.exe do PATH.
+export function findGitBash() {
+  if (process.platform !== 'win32') return null;
+  if (process.env.CLAUDE_CODE_GIT_BASH_PATH && existsSync(process.env.CLAUDE_CODE_GIT_BASH_PATH)) return process.env.CLAUDE_CODE_GIT_BASH_PATH;
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const roots = [
+    ...dirs.filter((d) => existsSync(path.join(d, 'git.exe'))).flatMap((d) => [path.resolve(d, '..'), path.resolve(d, '..', '..')]),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git'),
+  ];
+  const bash = roots.map((r) => path.join(r, 'bin', 'bash.exe')).find((f) => existsSync(f)) || null;
+  if (bash) process.env.CLAUDE_CODE_GIT_BASH_PATH = bash;
+  return bash;
+}
+export const GIT_BASH = findGitBash();
 
 // modelos Claude que o escritório oferece (o motor/config.json pode usar outro)
 export const CLAUDE_MODELS = [

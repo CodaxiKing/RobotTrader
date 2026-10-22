@@ -415,6 +415,12 @@ ovBody.addEventListener('click', async (e) => {
     try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = 'Copiado ✔'; } catch { copy.textContent = 'Não deu para copiar'; }
     return;
   }
+  const unblock = e.target.closest('[data-unblock]');
+  if (unblock) {
+    unblock.disabled = true;
+    await feed.unblock(unblock.dataset.unblock);
+    return;
+  }
   if (e.target.closest('[data-reset]')) {
     if (window.confirm('Apagar a simulação guardada e recomeçar do zero?')) { feed.reset(); location.search = ''; }
     return;

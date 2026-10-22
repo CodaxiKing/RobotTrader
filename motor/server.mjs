@@ -6,6 +6,7 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createOrchestrator } from './orchestrator.mjs';
+import { GIT_BASH } from './agents.mjs';
 import { createAccount } from './account.mjs';
 
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
@@ -37,6 +38,7 @@ const ROUTES = {
   'POST /api/account/code': async ({ code }) => { account.submitCode(code); return account.status(); },
   'POST /api/account/logout': async () => { await account.logout(); return account.status(); },
   'POST /api/decide': ({ id, approved }) => actions.decide(id, !!approved),
+  'POST /api/unblock': ({ taskId }) => ({ ok: actions.unblock(String(taskId || '')) }),
   'POST /api/pause': ({ paused }) => actions.setPaused(!!paused),
   'POST /api/robot-pause': ({ id, paused }) => actions.setRobotPaused(id, !!paused),
   'POST /api/budget': ({ usd }) => actions.setBudget(Number(usd)),
@@ -73,6 +75,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Motor do escritório em http://127.0.0.1:${config.port} · ${config.dryRun ? 'ENSAIO (dry-run)' : 'valendo'} · ${file.split(/[\\/]/).pop()}`);
   account.status().then((st) => console.log(`Conta Claude dos robôs: ${st.label}`));
+  if (process.platform === 'win32') console.log(GIT_BASH ? `Terminal dos agentes Claude: Git Bash (${GIT_BASH})` : 'Atenção: Git Bash não encontrado; os agentes Claude ficam sem terminal (defina CLAUDE_CODE_GIT_BASH_PATH no motor/.env)');
   console.log('Abra o escritório com ?live=1 (npm run dev em outro terminal).');
   motor.start();
 });
