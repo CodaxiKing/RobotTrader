@@ -305,6 +305,33 @@ export function createOrchestrator(config) {
     extras.tick();
   }
 
+  // ── depois de um reinício (ou de o motor cair), ninguém está trabalhando de verdade: cada task volta
+  // para um ponto de onde o fluxo anda sozinho. O que o dev deixou no worktree vira commit e segue para a
+  // segurança, sem rodar o dev de novo; sem nada salvo, o dev recomeça.
+  function recover() {
+    for (const t of s.board) {
+      if (t.column === 'refining') Object.assign(t, { column: 'todo', dev: null });
+      if (t.column === 'security') t.secBy = null;
+      if (t.column === 'qa') t.qa = null;
+      if (t.column !== 'dev' || !t.dev) continue;
+      if (!t.worktree) { t.column = 'todo'; t.dev = null; continue; }
+      const type = t.rework || t.origin === 'security' || t.origin === 'ops' ? 'fix' : 'feat';
+      work(t.dev, t, 'Retomando depois do reinício', async () => {
+        const commits = await git.commitAndPush(t.worktree, t.branch, base, `${type}(${slug(t.title.replace(/^\[[^\]]+\]\s*/, '')).split('-')[0]}): ${t.title.replace(/^\[[^\]]+\]\s*/, '').toLowerCase()}`);
+        const known = new Set(t.commits.map((c) => c.sha));
+        for (const c of commits) if (!known.has(c.sha)) t.commits.push({ ...c, time: now() });
+        s.robots[t.dev].commits += commits.length;
+        if (commits.length) {
+          t.column = 'security';
+          state.step(t, t.dev, `Retomou depois do reinício: salvou o trabalho em ${t.branch} (${commits.length} commit) e mandou para a revisão de segurança`);
+        } else {
+          state.step(t, t.dev, 'Retomou depois do reinício: não havia nada salvo, recomeça a implementar');
+          setTimeout(() => develop(t, t.dev), 0);
+        }
+      });
+    }
+  }
+
   // ── ações do dono (vêm da tela pelo servidor) ──
   function setPaused(value, reason = null) {
     s.paused = value;
@@ -362,6 +389,7 @@ export function createOrchestrator(config) {
   return {
     state,
     start() {
+      recover();
       syncProject().catch((err) => state.alert('warn', `Não li o GitHub Project: ${err.message}`));
       lastSync = Date.now();
       setInterval(schedule, 2000);
