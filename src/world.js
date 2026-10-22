@@ -53,13 +53,23 @@ function zoneLayout(floors, robots) {
   return { zones: new Map(items.filter((z) => z !== meet).map((z) => [z.id, z])), meet, bands, FX, FZ };
 }
 
+// cores do salão em cada tema (o neon e os monitores são iguais nos dois)
+const THEMES = {
+  dark: { tiles: ['#3a3d4b', '#454959'], wall: 0x353846, slat: 0x272a37, slab: 0x12131a, frame: 0x2b2e3b, glass: 0.1 },
+  light: { tiles: ['#c9cdd8', '#d6d9e2'], wall: 0xb9bdca, slat: 0xa6abba, slab: 0x8d92a3, frame: 0x8a8fa0, glass: 0.18 },
+};
+
+function drawTiles(c, [a, b]) {
+  const g = c.getContext('2d');
+  g.fillStyle = a; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = b; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
+  g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 2; g.strokeRect(0, 0, 64, 64); g.strokeRect(64, 64, 64, 64); g.strokeRect(64, 0, 64, 64); g.strokeRect(0, 64, 64, 64);
+}
+
 function floorTexture(FX, FZ) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = '#3a3d4b'; g.fillRect(0, 0, 128, 128);
-  g.fillStyle = '#454959'; g.fillRect(0, 0, 64, 64); g.fillRect(64, 64, 64, 64);
-  g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.strokeRect(0, 0, 64, 64); g.strokeRect(64, 64, 64, 64); g.strokeRect(64, 0, 64, 64); g.strokeRect(0, 64, 64, 64);
+  drawTiles(c, THEMES.dark.tiles);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(FX, FZ);
@@ -111,14 +121,21 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
   }
 
   // piso + laje
-  box(g, FX * 2 + 0.6, 0.9, FZ * 2 + 0.6, M(0x12131a), 0, -0.45, 0, { cast: false });
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(FX * 2, FZ * 2), new THREE.MeshStandardMaterial({ map: floorTexture(FX, FZ), roughness: 0.9 }));
+  const room = {
+    slab: new THREE.MeshStandardMaterial({ color: THEMES.dark.slab, roughness: 0.85 }),
+    wall: new THREE.MeshStandardMaterial({ color: THEMES.dark.wall, roughness: 0.85 }),
+    slat: new THREE.MeshStandardMaterial({ color: THEMES.dark.slat, roughness: 0.85 }),
+    frame: new THREE.MeshStandardMaterial({ color: THEMES.dark.frame, roughness: 0.85 }),
+    floor: new THREE.MeshStandardMaterial({ map: floorTexture(FX, FZ), roughness: 0.9 }),
+  };
+  box(g, FX * 2 + 0.6, 0.9, FZ * 2 + 0.6, room.slab, 0, -0.45, 0, { cast: false });
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(FX * 2, FZ * 2), room.floor);
   top.rotation.x = -Math.PI / 2; top.position.y = 0.01; top.receiveShadow = true; g.add(top);
   box(g, FX * 2 + 0.6, 0.2, 0.24, glow(YELLOW), 0, 0.02, FZ + 0.3, { cast: false });
   box(g, 0.24, 0.2, FZ * 2 + 0.6, glow(YELLOW), FX + 0.3, 0.02, 0, { cast: false });
 
   // paredes (fundo e esquerda), ripadas, com friso neon no topo
-  const wallM = M(0x353846), slatM = M(0x272a37);
+  const wallM = room.wall, slatM = room.slat;
   box(g, FX * 2 + 0.6, 5.6, 0.5, wallM, 0, 2.8, -FZ - 0.25, { cast: false });
   box(g, 0.5, 5.6, FZ * 2 + 0.6, wallM, -FX - 0.25, 2.8, 0, { cast: false });
   for (let x = -FX + 0.75; x < FX; x += 1.5) box(g, 0.5, 4.8, 0.14, slatM, x, 2.55, -FZ + 0.07, { cast: false });
@@ -148,8 +165,8 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
       const pane = new THREE.Mesh(new THREE.BoxGeometry(len, 5.0, 0.12), glass);
       pane.position.set(cx, 2.5, wz); g.add(pane);
       box(g, len, 0.16, 0.3, glow(YELLOW, 1.4), cx, 5.05, wz, { cast: false });
-      box(g, len, 0.3, 0.4, M(0x2b2e3b), cx, 0.15, wz, { cast: false });
-      for (let x = b.x0 - 1; x <= b.x1 + 1.01; x += (len - 0.01) / Math.max(1, Math.round(len / 7))) box(g, 0.18, 5.0, 0.18, M(0x2b2e3b), x, 2.5, wz, { cast: false });
+      box(g, len, 0.3, 0.4, room.frame, cx, 0.15, wz, { cast: false });
+      for (let x = b.x0 - 1; x <= b.x1 + 1.01; x += (len - 0.01) / Math.max(1, Math.round(len / 7))) box(g, 0.18, 5.0, 0.18, room.frame, x, 2.5, wz, { cast: false });
     }
     const rug = canvasTex(2048, 150);
     drawRug(rug.ctx, 2048, 150, 'ÁREA DE DESCANSO · ROBÔS LIVRES');
@@ -422,6 +439,20 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
   let currentZone = null;
   const world = {
     floors: floorMap, actors, hits, FX, FZ,
+    // planta do salão para o mapa pequeno: retângulo de cada zona (x, z, largura, profundidade)
+    plan: {
+      FX, FZ,
+      zones: floors.map((fl) => { const z = zones.get(fl.id); return { id: fl.id, label: fl.label, name: fl.name, x: z.x, z: z.oz, w: z.w, d: HALF * 2 }; }),
+      meet: { x: meet.x, z: meet.oz, w: meet.w, d: HALF * 2 },
+    },
+    // tema claro ou escuro: troca as cores do piso, das paredes e o vidro da divisória
+    setTheme(name) {
+      const t = THEMES[name] || THEMES.dark;
+      room.slab.color.setHex(t.slab); room.wall.color.setHex(t.wall); room.slat.color.setHex(t.slat); room.frame.color.setHex(t.frame);
+      drawTiles(room.floor.map.image, t.tiles);
+      room.floor.map.needsUpdate = true;
+      glass.opacity = t.glass;
+    },
     zone: (id) => zones.get(id),
     panel: (id) => panels.get(id),
     get current() { return currentZone; },

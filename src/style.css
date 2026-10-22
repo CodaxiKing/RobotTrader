@@ -399,3 +399,44 @@ body.tv #viewbtns { top: 74px; }
 .idea .decide button.mid { flex: 0 0 auto; border-color: var(--gold); background: rgba(255, 196, 0, 0.1); color: var(--gold); }
 
 button.link { font: inherit; background: none; border: 0; padding: 0; color: var(--gold); text-decoration: underline; cursor: pointer; }
+
+/* mapa pequeno, embaixo à esquerda (a lista de robôs encolhe para caber) */
+#minimap { position: fixed; left: 14px; bottom: 14px; width: 232px; height: 158px; z-index: 6; border-radius: 10px; border: 1px solid var(--border); cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+#sidebar { max-height: calc(100% - 268px); }
+body.tv #minimap { display: none; }
+@media (max-width: 900px) { #minimap { display: none; } }
+
+/* tema claro: a interface fica clara; o salão clareia piso e paredes, e o neon continua */
+body.light {
+  --bg: #eef0f6;
+  --panel: rgba(255, 255, 255, 0.92);
+  --border: rgba(176, 125, 0, 0.45);
+  --gold: #b07d00;
+  --text: #1d2030;
+  --muted: #5b6178;
+  --up: #059669;
+  --down: #dc2626;
+}
+body.light #topbar { background: linear-gradient(180deg, rgba(250, 251, 255, 0.97), rgba(250, 251, 255, 0.85)); }
+body.light .logo::after { background: #f6f7fb; }
+body.light #floorbar, body.light #viewbtns button, body.light #hint { background: rgba(255, 255, 255, 0.9); color: var(--text); }
+body.light #floorbar button { color: var(--text); }
+body.light .chip { background: rgba(0, 0, 0, 0.04); border-color: rgba(0, 0, 0, 0.1); }
+body.light .robot-card { background: var(--panel); border-color: rgba(0, 0, 0, 0.08); }
+body.light .robot-card:hover { background: #fff; }
+body.light .bubble { background: rgba(255, 255, 255, 0.95); color: var(--text); border-color: rgba(176, 125, 0, 0.6); }
+body.light .bubble .b-activity { color: var(--gold); }
+body.light .ov-panel { background: rgba(250, 251, 255, 0.98); }
+body.light .ov-close { color: var(--text); }
+body.light #overlay { background: rgba(200, 205, 220, 0.6); }
+body.light .kanban .col, body.light .mkt-board .col, body.light .tile, body.light .queue, body.light .prod-head > div, body.light .report, body.light .idea, body.light .today-text, body.light .caption { background: rgba(0, 0, 0, 0.03); border-color: rgba(0, 0, 0, 0.08); }
+body.light .task-card { background: #fff; border-color: rgba(0, 0, 0, 0.08); }
+body.light .task-card.sec-fix { background: #fff1f1; }
+body.light .finding { color: #5c1a1a; }
+body.light .report p, body.light .idea p, body.light .changes li, body.light #infocard li, body.light .chat p { color: var(--text); }
+body.light .toast { background: rgba(255, 255, 255, 0.97); color: var(--text); }
+body.light .toast.danger { background: #fff1f1; }
+body.light #paused-banner { background: rgba(255, 244, 214, 0.97); }
+body.light .audit-filter input, body.light .audit-filter select, body.light .chat-form input { background: #fff; color: var(--text); border-color: rgba(0, 0, 0, 0.15); }
+body.light .info-actions button { color: var(--text); background: rgba(0, 0, 0, 0.04); }
+body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); }

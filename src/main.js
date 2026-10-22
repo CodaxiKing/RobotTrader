@@ -15,6 +15,7 @@ import { AREA, fmtTime, pct, doneLabel, drawMonitorWork, drawFullScreen, drawCan
 import { usd } from './data/stats.js';
 import { esc } from './ui/html.js';
 import { createPanels } from './ui/panels.js';
+import { createMinimap } from './ui/minimap.js';
 
 // ── fonte de dados ──  simulada por padrão; ?live=1 lê ./status.json
 const params = new URLSearchParams(location.search);
@@ -64,7 +65,8 @@ controls.minAzimuthAngle = Math.PI / 4 - 0.55;
 controls.maxAzimuthAngle = Math.PI / 4 + 0.55;
 
 // ── luzes ──
-scene.add(new THREE.HemisphereLight(0xb4c0f0, 0x3a2e14, 1.5));
+const hemi = new THREE.HemisphereLight(0xb4c0f0, 0x3a2e14, 1.5);
+scene.add(hemi);
 const key = new THREE.DirectionalLight(0xfff0d6, 2.0);
 key.shadow.mapSize.set(4096, 4096);
 Object.assign(key.shadow.camera, { left: -64, right: 64, top: 50, bottom: -50, near: 1, far: 260 });
@@ -630,7 +632,27 @@ renderer.setAnimationLoop(() => {
 });
 
 // ── início ──
+// ── mapa pequeno e tema ──
+const minimap = createMinimap($('minimap'), { plan: world.plan, actors: world.actors, getState: (id) => feed.getState(id), onPick: (id) => selectFloor(id) });
+let theme = (params.get('theme') || store.get('petlive-theme')) === 'light' ? 'light' : 'dark';
+function applyTheme(name) {
+  theme = name;
+  const light = name === 'light';
+  document.body.classList.toggle('light', light);
+  world.setTheme(name);
+  scene.background.set(light ? 0xdfe3ec : 0x04050a);
+  hemi.intensity = light ? 2.2 : 1.5;
+  renderer.toneMappingExposure = light ? 1.0 : 1.15;
+  $('btn-theme').textContent = light ? '☾' : '☀';
+  $('btn-theme').title = light ? 'Voltar ao tema escuro' : 'Tema claro';
+  store.set('petlive-theme', name);
+  minimap.draw(currentFloor, light);
+}
+$('btn-theme').onclick = () => applyTheme(theme === 'light' ? 'dark' : 'light');
+setInterval(() => minimap.draw(currentFloor, theme === 'light'), 300);
+
 selectFloor(currentFloor, { fly: false });
+applyTheme(theme);
 applyView(HOME);
 refreshAll();
 tickClock();
