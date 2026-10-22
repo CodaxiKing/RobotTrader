@@ -18,7 +18,16 @@ export function createGit({ dryRun, log }) {
     });
   }
   const git = (cwd, ...args) => run('git', args, { cwd });
-  const worktreesOf = (repo) => `${repo.path.replace(/[\\/]+$/, '')}-worktrees`;
+  // repo.worktrees escolhe a pasta (caminho curto ajuda no Windows); senão, <repo>-worktrees ao lado
+  const worktreesOf = (repo) => repo.worktrees || `${repo.path.replace(/[\\/]+$/, '')}-worktrees`;
+  // web e app no mesmo repositório dividem o worktree de integração: um merge (ou changelog) por vez
+  const locks = new Map();
+  const serial = (key, fn) => {
+    const prev = locks.get(key) || Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    locks.set(key, next);
+    return next;
+  };
 
   return {
     run,
@@ -43,7 +52,10 @@ export function createGit({ dryRun, log }) {
       return out ? out.split('\n').map((l) => { const [sha, ...m] = l.split('\t'); return { sha, message: m.join('\t') }; }) : [];
     },
     // merge --no-ff de `from` em `into`, feito no worktree de integração, e push
-    async mergeInto(repo, from, into) {
+    mergeInto(repo, from, into) {
+      return serial(worktreesOf(repo), () => this._mergeInto(repo, from, into));
+    },
+    async _mergeInto(repo, from, into) {
       const dir = path.join(worktreesOf(repo), '_integration');
       if (!dryRun && !existsSync(dir)) {
         mkdirSync(worktreesOf(repo), { recursive: true });
@@ -55,7 +67,10 @@ export function createGit({ dryRun, log }) {
       await git(dir, 'push', 'origin', `HEAD:${into}`);
     },
     // uma linha no CHANGELOG.md da base, com commit e push, feita no worktree de integração
-    async appendChangelog(repo, base, line) {
+    appendChangelog(repo, base, line) {
+      return serial(worktreesOf(repo), () => this._appendChangelog(repo, base, line));
+    },
+    async _appendChangelog(repo, base, line) {
       const dir = path.join(worktreesOf(repo), '_integration');
       if (!dryRun && !existsSync(dir)) {
         mkdirSync(worktreesOf(repo), { recursive: true });

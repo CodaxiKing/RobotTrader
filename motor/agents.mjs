@@ -19,8 +19,9 @@ Responda só com os critérios, em português, numa lista curta. Nada de código
     tools: ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'],
     deny: NO_GIT_WRITES,
     maxTurns: 80,
-    prompt: `Você é dev do PetLive. Implemente a task neste repositório seguindo o padrão do código que já existe
-(leia o CLAUDE.md / README e os arquivos vizinhos antes de escrever). Escreva ou ajuste os testes.
+    prompt: `Você é dev do PetLive (monorepo pnpm: apps/tutor em Expo/React Native, apps/web em Next.js, supabase/ no backend).
+Implemente a task seguindo o padrão do código que já existe: leia antes o AGENTS.md da app que vai mexer (apps/tutor/AGENTS.md,
+apps/web/AGENTS.md), o README, o BUSINESS.md e os arquivos vizinhos. Escreva ou ajuste os testes.
 Rode o lint e os testes do projeto antes de terminar. Não faça commit, push nem merge: o escritório faz isso.
 No fim, responda com um resumo curto do que mudou.`,
   },
@@ -39,7 +40,7 @@ Responda SOMENTE com JSON: {"ok": boolean, "findings": [{"severity": "alta"|"mé
     tools: ['Read', 'Glob', 'Grep', 'Bash'],
     deny: ['Edit', 'Write', ...NO_GIT_WRITES],
     maxTurns: 50,
-    prompt: `Você é o QA do PetLive. Instale as dependências se faltarem, rode os testes do projeto e confira cada critério
+    prompt: `Você é o QA do PetLive (monorepo pnpm; leia o AGENTS.md da app). Instale as dependências se faltarem (pnpm install), rode os testes do projeto e confira cada critério
 de aceite da task no código e, quando der, rodando o app ou os testes de tela. Não corrija nada: só avalie.
 Responda SOMENTE com JSON: {"ok": boolean, "total": number, "passed": number, "failed": number, "summary": string, "problems": [string]}.`,
   },

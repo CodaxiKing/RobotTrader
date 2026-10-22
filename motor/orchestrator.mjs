@@ -37,12 +37,12 @@ export function createOrchestrator(config) {
   }
   const screenFor = (title) => s.canvas.screens.find((sc) => slug(sc.name) === slug(title));
 
-  function addTask({ id, itemId = null, title, body = '', area, origin = 'board', from = null }) {
+  function addTask({ id, itemId = null, title, body = '', area, origin = 'board', from = null, priority = null, fase = null }) {
     const prefix = origin === 'security' || origin === 'ops' ? 'fix' : 'feat';
     const sc = screenFor(title);
     const task = {
-      id, itemId, title, body, area, origin, from, column: 'todo', dev: null, qa: null, secBy: null,
-      branch: `${prefix}/${slug(title)}`, commits: [], tests: null, rework: 0, findings: [], problems: [],
+      id, itemId, title, body, area, origin, from, priority, fase, column: 'todo', dev: null, qa: null, secBy: null,
+      branch: `${prefix}/${slug(title.replace(/^\[[^\]]+\]\s*/, ''))}`, commits: [], tests: null, rework: 0, findings: [], problems: [],
       returnedBy: null, criteria: '', createdAt: now(), mergedAt: null, cost: 0, timeline: [], aligned: false,
       released: null, blocked: false, screen: sc?.file || null,
     };
@@ -53,11 +53,30 @@ export function createOrchestrator(config) {
   }
 
   // ── board: itens do GitHub Project na coluna Todo viram tasks ──
+  // A área sai do prefixo do título ([APP-CLIENTE], [WEB]…, em project.areas); sem prefixo, das labels.
   const areaOf = (item) => {
+    const prefix = item.title.match(/^\[([^\]]+)\]/)?.[1];
+    if (prefix && config.project.areas?.[prefix]) return config.project.areas[prefix];
     const labels = (item.labels || item.content?.labels || []).map((l) => String(l.name || l).toLowerCase());
     const text = `${item.title} ${item.content?.repository || ''}`.toLowerCase();
     return labels.some((l) => config.appLabels.includes(l)) || config.appLabels.some((l) => text.includes(l)) ? 'app' : 'web';
   };
+  // só entra o que está no escopo combinado: fases, prioridades e nada da lista de itens que não são código
+  const inScope = (item) => {
+    const p = config.project;
+    if (p.fases?.length && !p.fases.some((f) => String(item.fase || '').startsWith(f))) return false;
+    if (p.priorities?.length && !p.priorities.includes(item.priority)) return false;
+    if (p.skip?.some((re) => new RegExp(re, 'i').test(item.title))) return false;
+    return !!config.project.areas?.[item.title.match(/^\[([^\]]+)\]/)?.[1]] || !config.project.areas;
+  };
+  const rank = (t) => (config.project.priorities || []).indexOf(t.priority) + 1 || 99;
+  // o backlog fica na ordem de prioridade (P0 primeiro); o que você priorizou à mão continua na frente
+  function sortBacklog() {
+    const todo = s.board.filter((t) => t.column === 'todo');
+    const rest = s.board.filter((t) => t.column !== 'todo');
+    todo.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || rank(a) - rank(b));
+    s.board.splice(0, s.board.length, ...rest, ...todo);
+  }
   async function syncProject() {
     if (dryRun) {
       // ensaio: o backlog sai da Fase 1 do canvas, como na simulação
@@ -65,10 +84,15 @@ export function createOrchestrator(config) {
       return state.changed();
     }
     const items = await project.items();
+    let added = 0;
     for (const item of items) {
-      if (item.status !== config.project.statuses.todo || s.board.some((t) => t.itemId === item.id)) continue;
-      const t = addTask({ id: item.content?.number ? `#${item.content.number}` : `P-${item.id.slice(-5)}`, itemId: item.id, title: item.title, body: item.content?.body || '', area: areaOf(item) });
-      state.push('PO_01', `Pegou do GitHub Project: ${t.id} "${t.title}"`, { taskId: t.id });
+      if (item.status !== config.project.statuses.todo || s.board.some((t) => t.itemId === item.id) || !inScope(item)) continue;
+      addTask({ id: item.content?.number ? `#${item.content.number}` : `P-${item.id.slice(-5)}`, itemId: item.id, title: item.title, body: item.content?.body || '', area: areaOf(item), priority: item.priority, fase: item.fase });
+      added++;
+    }
+    if (added) {
+      sortBacklog();
+      state.push('PO_01', `Trouxe ${added} item(ns) do GitHub Project para o Backlog (${(config.project.fases || []).join(', ')} · ${(config.project.priorities || []).join(', ')})`);
     }
   }
 
@@ -189,6 +213,12 @@ export function createOrchestrator(config) {
       s.changelog.push({ time: now(), taskId: task.id, kind: task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo', text: `${task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo'}: ${task.title}` });
       extras.onMerged(task);
       state.step(task, qaId, `Aprovou · merge em ${base} · relatório pronto`);
+      mergesThisRun++;
+      const stopAt = config.limits?.pauseAfterMerges;
+      if (stopAt && mergesThisRun >= stopAt) {
+        setPaused(true, `piloto: ${mergesThisRun} entrega(s) em ${base}; revise e continue quando quiser`);
+        state.alert('warn', `Piloto concluído: ${task.id} "${task.title}" foi para ${base}. Revise o merge e clique em Continuar.`, { taskId: task.id, panel: 'reports' });
+      }
       await project.move(task.itemId, 'done');
       await git.removeWorktree(repo, task.worktree);
     });
@@ -237,6 +267,7 @@ export function createOrchestrator(config) {
   }
 
   const extras = createExtras({ config, state, agent, work, git, repoOf });
+  let mergesThisRun = 0;
 
   // ── agenda: a cada volta, quem está livre pega o próximo trabalho ──
   let syncing = null;
@@ -254,7 +285,8 @@ export function createOrchestrator(config) {
       const back = s.board.find((t) => ready(t) && t.column === 'rework' && t.dev === dev.id);
       if (back) develop(back, dev.id);
     }
-    if (!busy('PO_01')) {
+    const active = s.board.filter((t) => ['refining', 'dev', 'security', 'qa', 'rework'].includes(t.column)).length;
+    if (!busy('PO_01') && active < (config.limits?.maxActive || Infinity)) {
       const free = byKind('dev').filter((d) => !busy(d.id) && !s.board.some((t) => t.column === 'rework' && t.dev === d.id));
       const next = s.board.find((t) => ready(t) && t.column === 'todo' && free.some((d) => d.area === t.area));
       if (next) refine(next, free.find((d) => d.area === next.area).id);
@@ -299,6 +331,7 @@ export function createOrchestrator(config) {
     const t = state.task(taskId);
     if (!t || t.column !== 'todo') return false;
     t.blocked = false;
+    t.pinned = true;
     s.board.splice(s.board.indexOf(t), 1);
     const before = beforeId ? state.task(beforeId) : s.board.find((x) => x.column === 'todo');
     s.board.splice(before ? s.board.indexOf(before) : s.board.length, 0, t);
