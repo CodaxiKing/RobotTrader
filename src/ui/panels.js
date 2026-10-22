@@ -4,7 +4,7 @@
 import { OFFICE, COLUMNS, robotById } from '../data/robots.js';
 import { AREA, FOCUS, SEVERITY, SCREEN, screenState, fmtTime, doneLabel } from '../screens.js';
 import { computeMetrics, buildToday, usd } from '../data/stats.js';
-import { NETWORKS, STAGES } from '../data/marketing.js';
+import { NETWORKS, STAGES, BRAND } from '../data/marketing.js';
 import { esc, who, fmtN } from './html.js';
 
 // root(): o elemento do overlay, para o histórico ler a busca que o dono digitou
@@ -15,14 +15,28 @@ export function createPanels({ feed, root }) {
     idea: (t) => `sugestão de ${who(t.from)}, aprovada por você`,
   };
 
-  // prévia de um criativo da agência: as cores e o título que o ARTE_01 / VIDEO_01 escolheram
-  const creative = (p, size = '') => `
-    <div class="creative ${p.video ? 'is-video' : ''} ${size}" style="--bg:${p.visual?.palette[0] || '#2a2e42'};--fg:${p.visual?.palette[1] || '#e6e8f5'}">
-      <span class="net">${esc(NETWORKS[p.network].label)} · ${esc(p.format)}</span>
-      <b>${esc(p.visual?.headline || p.hook)}</b>
-      ${p.video ? '<i class="play">▶</i>' : ''}${p.slides ? `<i class="slides">1/${p.slides}</i>` : ''}
-      <small>${p.visual ? esc(p.visual.layout) : 'arte ainda não feita'}</small>
-    </div>`;
+  // prévia de um criativo da agência no template da marca (BRAND / TEMPLATES em data/marketing.js);
+  // antes da arte ficar pronta, um cartão neutro só com o gancho
+  const dog = '<i class="pet-dog" aria-hidden="true"><i></i><i></i><i></i></i>';
+  const creative = (p, size = '') => {
+    const v = p.visual;
+    const meta = `<span class="net">${esc(NETWORKS[p.network].label)} · ${esc(p.format)}</span>${p.video ? '<i class="play">▶</i>' : ''}${p.slides ? `<i class="slides">1/${p.slides}</i>` : ''}`;
+    if (!v?.template) {
+      return `<div class="creative draft ${p.video ? 'is-video' : ''} ${size}">${meta}<b>${esc(v?.headline || p.hook)}</b><small>${v ? esc(v.layout) : 'arte ainda não feita'}</small></div>`;
+    }
+    const fam = BRAND.families[v.family] || BRAND.families.azul;
+    const style = `--fam-bg:${fam.bg};--fam-text:${fam.text}`;
+    const title = `<b class="cr-title">${esc(v.headline)}</b>`;
+    const cta = `<span class="cr-cta">${esc(v.cta.replace(/\.$/, ''))}</span>`;
+    const logo = '<span class="cr-logo">PetLive</span>';
+    const body = {
+      onda: `<div class="cr-head">${dog}</div>${title}${cta}${logo}`,
+      cartao: `${title}<ul class="cr-points">${v.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${logo}`,
+      pergunta: `<span class="cr-tag">PetLive explica</span>${title}${cta}${logo}`,
+      app: `${title}<span class="cr-phone"><i></i><i></i><i></i></span>${logo}`,
+    }[v.template];
+    return `<div class="creative tpl-${v.template} ${p.video ? 'is-video' : ''} ${size}" style="${style}" title="${esc(v.layout)}">${meta}${body}</div>`;
+  };
 
   function pieceHtml(id) {
     const p = feed.marketing?.pieces.find((x) => x.id === id);

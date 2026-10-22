@@ -440,3 +440,39 @@ body.light #paused-banner { background: rgba(255, 244, 214, 0.97); }
 body.light .audit-filter input, body.light .audit-filter select, body.light .chat-form input { background: #fff; color: var(--text); border-color: rgba(0, 0, 0, 0.15); }
 body.light .info-actions button { color: var(--text); background: rgba(0, 0, 0, 0.04); }
 body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); }
+
+/* criativos nos templates da marca PetLive (cores e fonte do artboard "Paleta de cores") */
+.creative { container-type: inline-size; }
+.creative[class*='tpl-'] { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #fff; color: #111; justify-content: flex-start; padding: 11cqw 8cqw 8cqw; gap: 4cqw; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
+.creative[class*='tpl-'] .net { color: inherit; font-size: 4.2cqw; top: 3.5cqw; left: 5cqw; z-index: 2; }
+.creative[class*='tpl-'] .play, .creative[class*='tpl-'] .slides { font-size: 5cqw; z-index: 2; }
+.creative .cr-title { position: relative; z-index: 1; font-weight: 800; font-size: 9cqw; line-height: 1.12; letter-spacing: -0.01em; }
+.creative .cr-cta { position: relative; z-index: 1; align-self: flex-start; font-weight: 600; font-size: 4.6cqw; padding: 2.4cqw 4.5cqw; border-radius: 99px; background: #111; color: #fff; }
+.creative .cr-logo { position: absolute; right: 5cqw; bottom: 4cqw; font-weight: 800; font-size: 4.6cqw; }
+.creative .cr-logo::before { content: ''; display: inline-block; width: 2.6cqw; height: 2.6cqw; margin-right: 1.4cqw; border-radius: 50%; background: #9ad6f8; }
+/* onda: cabeçalho azul com a ilustração do cão */
+.tpl-onda .cr-head { position: absolute; inset: 0 0 auto 0; height: 44%; background: #a9dcf6; border-radius: 0 0 55% 45% / 0 0 22% 16%; }
+.tpl-onda .cr-title { margin-top: 38%; }
+.pet-dog { position: absolute; right: 9cqw; bottom: -6cqw; width: 24cqw; height: 22cqw; border-radius: 50% 50% 46% 46%; background: #e3ad6a; }
+.pet-dog i { position: absolute; display: block; }
+.pet-dog i:nth-child(1), .pet-dog i:nth-child(2) { top: -2cqw; width: 8cqw; height: 12cqw; border-radius: 50%; background: #b97a3c; }
+.pet-dog i:nth-child(1) { left: -2cqw; rotate: -18deg; }
+.pet-dog i:nth-child(2) { right: -2cqw; rotate: 18deg; }
+.pet-dog i:nth-child(3) { left: 7cqw; bottom: 3cqw; width: 10cqw; height: 7cqw; border-radius: 50%; background: #f8e3c0; box-shadow: 0 -1.5cqw 0 -0.6cqw #111 inset; }
+/* cartão pastel com três pontos */
+.tpl-cartao { background: var(--fam-bg) !important; color: var(--fam-text) !important; }
+.creative .cr-points { position: relative; margin: 0; padding: 0 0 0 5cqw; font-size: 4.6cqw; font-weight: 500; line-height: 1.35; display: grid; gap: 1.5cqw; }
+/* pergunta: fundo preto com destaque azul céu */
+.tpl-pergunta { background: #111 !important; color: #fff !important; justify-content: center; }
+.creative .cr-tag { align-self: flex-start; font-size: 4.2cqw; font-weight: 600; color: #111; background: #9ad6f8; padding: 1.4cqw 3.4cqw; border-radius: 99px; }
+.tpl-pergunta .cr-cta { background: #9ad6f8; color: #111; }
+/* app: título e um celular com a tela */
+.tpl-app { background: var(--fam-bg) !important; color: #111 !important; }
+.creative .cr-phone { align-self: center; width: 36%; aspect-ratio: 9 / 16; max-height: 52%; border: 1.6cqw solid #111; border-radius: 6cqw; background: #fff; padding: 4cqw 3cqw; display: flex; flex-direction: column; gap: 2.4cqw; }
+.creative .cr-phone i { display: block; height: 4cqw; border-radius: 2cqw; background: var(--fam-bg); }
+.creative .cr-phone i:first-child { height: 12cqw; background: #a9dcf6; }
+.creative.draft { background: linear-gradient(155deg, #2a2e42, #1b1e2c); color: #e6e8f5; }
+/* o criativo mede a própria largura (cqw): ele precisa caber na coluna, e não o contrário */
+.creative { width: 100%; box-sizing: border-box; }
+.mkt-board .col, .piece-card, .post-row > :first-child { min-width: 0; }
+.mkt-board .col { overflow: hidden; }

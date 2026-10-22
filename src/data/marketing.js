@@ -20,7 +20,7 @@ export const NETWORKS = {
   facebook: { label: 'Facebook', formats: ['Post', 'Vídeo'] },
   linkedin: { label: 'LinkedIn', formats: ['Post'] },
 };
-const VIDEO = new Set(['Reels', 'Vídeo', 'Short']);
+export const VIDEO = new Set(['Reels', 'Vídeo', 'Short']);
 
 export const STAGES = [
   { id: 'roteiro', label: 'Roteiro' },
@@ -30,11 +30,13 @@ export const STAGES = [
   { id: 'ajuste', label: 'Ajuste' },
   { id: 'aprovação', label: 'Sua aprovação' },
   { id: 'agendado', label: 'Agendado' },
+  // motor sem a API da Meta: aprovado fica pronto para você postar
+  { id: 'pronto', label: 'Pronto para postar' },
   { id: 'publicado', label: 'Publicado' },
 ];
 
 // conteúdo de valor para tutores; os lançamentos do app entram por cima destes
-const THEMES = [
+export const THEMES = [
   { topic: 'vacinas', hook: 'Seu pet está com as vacinas em dia?', angle: 'educativo', body: 'A carteirinha digital do PetLive avisa antes de cada dose vencer. Sem papel perdido, sem susto no veterinário.', cta: 'Baixe o PetLive e cadastre a carteirinha em 2 minutos.' },
   { topic: 'fogos', hook: '3 jeitos de acalmar o seu pet nos fogos', angle: 'dica', body: 'Cantinho escuro, som ambiente e nada de bronca. O PetLive tem um modo fogos e trovão com o passo a passo.', cta: 'Salve este post para a virada do ano.' },
   { topic: 'pet perdido', hook: 'O QR na coleira que trouxe o Thor de volta', angle: 'história', body: 'Quem achou o Thor escaneou a coleira e falou com a tutora na hora. A ficha do pet aparece no celular de quem encontra.', cta: 'Ative o QR da coleira no app.' },
@@ -43,8 +45,27 @@ const THEMES = [
   { topic: 'pet sênior', hook: '5 sinais de que o seu pet está envelhecendo', angle: 'educativo', body: 'Mais sono, menos apetite e cuidado com as articulações. O PetLive acompanha a qualidade de vida do pet sênior.', cta: 'Conta aqui embaixo: quantos anos tem o seu?' },
   { topic: 'lojistas', hook: 'Sua agenda de banho e tosa no celular', angle: 'B2B', body: 'Lojistas no PetLive recebem pedidos, confirmam horários e acompanham a agenda sem planilha.', cta: 'Cadastre a sua loja.', network: 'linkedin' },
 ];
-const PALETTES = [['#ffb703', '#023047'], ['#8ecae6', '#1d3557'], ['#f4a261', '#264653'], ['#e76f51', '#fff1e6'], ['#90be6d', '#283618'], ['#cdb4db', '#3d2c5c']];
-const LAYOUTS = ['foto do pet + título grande', 'ilustração com lista', 'antes e depois', 'print do app no celular', 'pergunta em destaque'];
+// Identidade visual do PetLive (artboard "Paleta de cores" do canvas): preto e azul céu carregam a
+// marca; o resto é pastel, sempre com o texto escuro da mesma família. Fonte: Plus Jakarta Sans.
+export const BRAND = {
+  black: '#111111', sky: '#9AD6F8', header: '#A9DCF6', white: '#FFFFFF', star: '#F2A900',
+  families: {
+    azul: { bg: '#E0F1FA', text: '#2F6F93' },
+    lilas: { bg: '#EADCFB', text: '#5B3E8A' },
+    amarelo: { bg: '#FFF0C9', text: '#8A6414' },
+    verde: { bg: '#D8F2E3', text: '#1F6B45' },
+    rosa: { bg: '#FDE0E6', text: '#A3324F' },
+  },
+};
+// templates dos criativos; o vídeo usa a capa (frame inicial) no mesmo estilo
+export const TEMPLATES = {
+  onda: 'Cabeçalho azul com onda, título preto e botão',
+  cartao: 'Cartão pastel com título e três pontos',
+  pergunta: 'Fundo preto, pergunta grande e destaque azul céu',
+  app: 'Print do app no celular com título',
+};
+// cor por tom da pauta: emergência em rosa, premium em lilás, rotina em amarelo, sucesso em verde
+const FAMILY_BY_ANGLE = { educativo: 'azul', dica: 'amarelo', história: 'verde', produto: 'azul', lançamento: 'lilas', B2B: 'azul' };
 
 const CRITERIA = {
   gancho: 'O gancho demora: comece pela pergunta nos 2 primeiros segundos.',
@@ -63,6 +84,14 @@ const PROMOTIONS = [
   ['Grupo de WhatsApp de tutores da cidade', 'Conteúdo de dica uma vez por semana, com link do app; vira canal de comunidade.'],
   ['Calendário de datas pet', 'Dia do Cachorro (26/08), Dia dos Animais (04/10), vacinação antirrábica: posts preparados com antecedência.'],
 ];
+
+// arte da peça no template da marca: o mesmo para a simulação e para o motor
+export function brandVisual(p, pick) {
+  const template = p.video ? pick(['pergunta', 'app', 'onda']) : p.format === 'Carrossel' ? pick(['cartao', 'onda']) : pick(Object.keys(TEMPLATES));
+  const family = /socorro|chocolate|perdid|emerg/i.test(p.theme) ? 'rosa' : FAMILY_BY_ANGLE[p.angle] || pick(Object.keys(BRAND.families));
+  const points = p.brief.body.replace(/\.$/, '').split(/\. |, /).slice(0, 3);
+  return { template, family, layout: TEMPLATES[template], headline: p.hook, points, cta: p.brief.cta };
+}
 
 export function createMarketing({ push, alert, addIdea, pick, rand, keep, canvas, board }) {
   const pieces = [];
@@ -174,7 +203,7 @@ export function createMarketing({ push, alert, addIdea, pick, rand, keep, canvas
     },
   });
 
-  const makeVisual = (p) => ({ palette: pick(PALETTES), layout: pick(LAYOUTS), headline: p.hook });
+  const makeVisual = (p) => brandVisual(p, pick);
   const tickArt = creative('criação', {
     speed: [0.1, 0.2],
     activity: (p) => `Criativo ${p.format.toLowerCase()} · ${p.theme}`,
