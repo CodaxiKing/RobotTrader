@@ -1,7 +1,18 @@
 // Os agentes do escritório, rodando com o Claude Agent SDK (o harness do Claude Code como biblioteca).
 // Cada papel tem as suas ferramentas: só o dev edita arquivos; segurança e QA leem e rodam comandos.
 // Commit, push e merge ficam com o orquestrador, nunca com o agente.
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, USAGE_LIMIT_ERROR_PREFIXES } from '@anthropic-ai/claude-agent-sdk';
+
+// o limite do plano (5h ou semanal) acabou no meio do trabalho; resetsAt é quando renova (ms, ou null se não veio)
+export class PlanLimitError extends Error {
+  constructor(resetsAt, detail) {
+    super(`limite do plano acabou${detail ? ` (${detail})` : ''}`);
+    this.planLimit = true;
+    this.resetsAt = resetsAt;
+  }
+}
+const toMs = (v) => (v == null ? null : typeof v === 'string' ? Date.parse(v) || null : v < 1e12 ? v * 1000 : v);
+const isLimitText = (text) => USAGE_LIMIT_ERROR_PREFIXES.some((p) => String(text || '').trim().startsWith(p));
 
 // o agente não mexe no histórico do git nem apaga às cegas; isso é do orquestrador
 const NO_GIT_WRITES = ['Bash(git push:*)', 'Bash(git merge:*)', 'Bash(git checkout:*)', 'Bash(git reset:*)', 'Bash(git commit:*)', 'Bash(git rebase:*)', 'Bash(rm -rf:*)'];
@@ -97,15 +108,27 @@ export function parseJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-export function createAgents({ model, budgets, dryRun, log }) {
+export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
+  // ensaio: um plano de mentira que enche 3% por agente e renova 20 s depois de acabar, para ver a espera
+  const fake = { used: 70, resetsAt: Date.now() + 10 * 60e3 };
+  function fakeSpend() {
+    if (Date.now() > fake.resetsAt) Object.assign(fake, { used: 0, resetsAt: Date.now() + 10 * 60e3 });
+    if (fake.used >= 100) throw new PlanLimitError(fake.resetsAt, 'ensaio');
+    fake.used = Math.min(100, fake.used + 3);
+    if (fake.used >= 100) fake.resetsAt = Date.now() + 20e3;
+  }
+
   // roda um agente até o fim e devolve { text, cost, ok, turns }
   async function run(role, { prompt, cwd, budget, signal }) {
     const cfg = ROLES[role];
-    if (dryRun) return dryRunAnswer(role);
+    if (dryRun) { fakeSpend(); return dryRunAnswer(role); }
     const controller = new AbortController();
     signal?.addEventListener('abort', () => controller.abort());
     let result = null;
-    for await (const message of query({
+    // o Claude Code avisa a cada mudança do limite do plano; "rejected" é o limite que acabou
+    let rejectedAt;
+    let limitHit = false;
+    const stream = query({
       prompt,
       options: {
         cwd,
@@ -122,11 +145,26 @@ Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` }
         maxBudgetUsd: budget ?? budgets[role] ?? budgets.default,
         abortController: controller,
       },
-    })) {
-      if (message.type === 'result') result = message;
+    });
+    try {
+      for await (const message of stream) {
+        if (message.type === 'result') result = message;
+        if (message.type === 'rate_limit_event') {
+          const info = message.rate_limit_info;
+          onRateLimit?.(info);
+          if (info.status === 'rejected') rejectedAt = toMs(info.resetsAt);
+        }
+        if (message.type === 'assistant' && message.error === 'rate_limit') limitHit = true;
+      }
+    } catch (err) {
+      if (isLimitText(err.message) || rejectedAt !== undefined) throw new PlanLimitError(rejectedAt ?? null, err.message);
+      throw err;
+    }
+    const ok = result && result.subtype === 'success' && !result.is_error;
+    if (!ok && (limitHit || rejectedAt !== undefined || isLimitText(result?.result))) {
+      throw new PlanLimitError(rejectedAt ?? null, String(result?.result || '').slice(0, 120));
     }
     if (!result) throw new Error(`${role}: o agente terminou sem resultado`);
-    const ok = result.subtype === 'success' && !result.is_error;
     if (!ok) log(`${role}: ${result.subtype}${result.errors?.length ? ` · ${result.errors.join('; ')}` : ''}`);
     return { text: ok ? result.result : '', cost: result.total_cost_usd || 0, ok, turns: result.num_turns, subtype: result.subtype };
   }
@@ -154,5 +192,29 @@ Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` }
     return { text: answers[role], cost, ok: true, turns: 1, subtype: 'success' };
   }
 
-  return { run };
+  // uso do plano da conta (o mesmo do /usage): abre uma sessão sem mandar mensagem, então não gasta nada.
+  // null quando não há plano (chave de API) ou o Claude Code não respondeu
+  async function usage() {
+    if (dryRun) {
+      if (Date.now() > fake.resetsAt) Object.assign(fake, { used: 0, resetsAt: Date.now() + 10 * 60e3 });
+      return { available: true, name: 'ensaio', session: { ...fake }, weekly: { used: 40, resetsAt: Date.now() + 3 * 864e5 } };
+    }
+    let release;
+    const idle = (async function* () { await new Promise((r) => (release = r)); })();
+    const q = query({ prompt: idle, options: { settingSources: [] } });
+    try {
+      const u = await Promise.race([
+        q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('o Claude Code não respondeu o uso do plano')), 30000)),
+      ]);
+      if (!u.rate_limits_available || !u.rate_limits) return { available: false, name: u.subscription_type };
+      const win = (w) => (w && w.utilization != null ? { used: w.utilization, resetsAt: toMs(w.resets_at) } : null);
+      return { available: true, name: u.subscription_type, session: win(u.rate_limits.five_hour), weekly: win(u.rate_limits.seven_day) };
+    } finally {
+      release?.();
+      q.close();
+    }
+  }
+
+  return { run, usage };
 }

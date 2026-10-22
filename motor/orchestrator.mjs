@@ -25,8 +25,73 @@ export function createOrchestrator(config) {
   const log = (text) => console.log(`  ${text}`);
   const git = createGit({ dryRun, log });
   const project = createProject({ run: git.run, ...config.project, dryRun });
-  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log });
+  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit });
   const repoOf = (task) => config.repos[task.area];
+
+  // ── plano da conta Claude: % usado nas janelas de 5h e semanal, e a espera quando acaba ──
+  // Quando o limite acaba no meio, a task fica estacionada com o mesmo robô e o motor retoma sozinho na renovação.
+  s.plan ||= { available: false, name: null, session: null, weekly: null, waitUntil: null, checkedAt: null };
+  const hhmm = (ms) => new Date(ms).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', ...(ms - Date.now() > 20 * 3600e3 ? { weekday: 'short' } : {}) });
+  const planWaiting = () => !!s.plan.waitUntil && Date.now() < s.plan.waitUntil;
+  let checkingPlan = null;
+  function refreshPlan() {
+    if (checkingPlan) return checkingPlan;
+    checkingPlan = (async () => {
+      const u = await agents.usage();
+      if (!u) return;
+      Object.assign(s.plan, { available: u.available, name: u.name, session: u.session || null, weekly: u.weekly || null, checkedAt: now() });
+      // janela cheia sem nenhum robô ter batido nela ainda (ex.: você usou o Claude Code na mesma conta)
+      const full = [u.session, u.weekly].filter((w) => w && w.used >= 100 && w.resetsAt > Date.now());
+      if (full.length) holdForPlan(Math.max(...full.map((w) => w.resetsAt)));
+      state.changed();
+    })().catch((err) => log(`uso do plano: ${err.message}`)).finally(() => (checkingPlan = null));
+    return checkingPlan;
+  }
+  // o Claude Code avisa durante o trabalho: atualiza a janela que mudou sem esperar a próxima leitura
+  function onRateLimit(info) {
+    const key = info.rateLimitType === 'five_hour' ? 'session' : info.rateLimitType === 'seven_day' ? 'weekly' : null;
+    if (key && info.utilization != null) {
+      const resetsAt = info.resetsAt ? (info.resetsAt < 1e12 ? info.resetsAt * 1000 : info.resetsAt) : s.plan[key]?.resetsAt ?? null;
+      s.plan[key] = { used: Math.round(info.utilization <= 1 ? info.utilization * 100 : info.utilization), resetsAt };
+      s.plan.available = true;
+      state.changed();
+    }
+  }
+  function holdForPlan(resetsAt) {
+    // sem horário de renovação, tenta de novo em 15 minutos (a leitura do plano corrige se souber)
+    const until = resetsAt && resetsAt > Date.now() ? resetsAt + 60e3 : Date.now() + 15 * 60e3;
+    if (planWaiting() && s.plan.waitUntil >= until) return;
+    const first = !planWaiting();
+    s.plan.waitUntil = until;
+    if (first) {
+      state.push('OPS_01', `Limite do plano acabou: os robôs esperam e continuam sozinhos às ${hhmm(until)}`);
+      state.alert('warn', `Limite do plano Claude acabou. As tasks ficam paradas com o mesmo robô e voltam sozinhas às ${hhmm(until)}.`, { panel: 'board' });
+    }
+    state.changed();
+  }
+  // a task parada no meio volta para um ponto de onde o fluxo retoma com o mesmo robô
+  function park(task, robotId) {
+    task.parked = { column: task.column, robotId, at: now() };
+    if (task.column === 'security') task.secBy = null;
+    if (task.column === 'qa') task.qa = null;
+    state.step(task, robotId, `Limite do plano acabou no meio · continua às ${hhmm(s.plan.waitUntil)}`);
+  }
+  function resumeParked() {
+    for (const t of s.board.filter((x) => x.parked)) {
+      const { column, robotId } = t.parked;
+      if (column === 'refining' && !busy('PO_01')) { t.parked = null; refine(t, t.dev); }
+      else if ((column === 'dev' || column === 'rework') && t.dev && !s.robots[t.dev].paused && s.robots[t.dev].status === 'idle') {
+        t.parked = null;
+        state.step(t, t.dev, 'Plano renovado · voltou a implementar de onde parou');
+        develop(t, t.dev);
+      } else if (column === 'security' || column === 'qa') {
+        // a segurança e o QA da agenda pegam de novo; o mesmo robô tem a vez se estiver livre
+        t.parked = null;
+        if (column === 'security' && !busy(robotId)) review(t, robotId);
+        if (column === 'qa' && !busy(robotId)) test(t, robotId);
+      }
+    }
+  }
 
   // o canvas vem do snapshot (npm run canvas:snapshot); as telas entregues são marcadas no merge
   if (!s.canvas) {
@@ -97,20 +162,29 @@ export function createOrchestrator(config) {
   }
 
   // ── execução de um passo de um robô, com custo, erro e orçamento ──
-  const reserved = (id) => s.board.some((t) => t.column === 'refining' && t.dev === id);
+  const reserved = (id) => s.board.some((t) => (t.column === 'refining' || t.parked) && t.dev === id);
   const busy = (id) => s.robots[id].status !== 'idle' || s.robots[id].paused || reserved(id);
   async function work(robotId, task, activity, fn) {
     state.setRobot(robotId, { status: 'working', taskId: task?.id || null, progress: 0.1, activity });
+    let parked = false;
     try {
       await fn();
     } catch (err) {
+      if (err.planLimit) {
+        holdForPlan(err.resetsAt);
+        refreshPlan();
+        if (task) { park(task, robotId); parked = true; }
+        return;
+      }
       if (task) {
         task.blocked = true;
         state.step(task, robotId, `Travou: ${err.message}`);
       }
       state.alert('danger', `${robotId} travou${task ? ` em ${task.id}` : ''}: ${err.message}`, { robotId, taskId: task?.id, panel: 'board' });
     } finally {
-      state.setRobot(robotId, { status: 'idle', taskId: null, progress: 0, activity: 'Livre' });
+      state.setRobot(robotId, parked
+        ? { status: 'idle', taskId: task.id, progress: 0, activity: `Esperando o plano renovar (${hhmm(s.plan.waitUntil)})` }
+        : { status: 'idle', taskId: null, progress: 0, activity: 'Livre' });
     }
   }
   async function agent(robotId, role, task, opts) {
@@ -308,13 +382,21 @@ export function createOrchestrator(config) {
   // ── agenda: a cada volta, quem está livre pega o próximo trabalho ──
   let syncing = null;
   let lastSync = 0;
+  let lastPlanCheck = 0;
   function schedule() {
-    if (s.paused) return;
+    if (Date.now() - lastPlanCheck > (config.plan?.checkSeconds || 60) * 1000) { lastPlanCheck = Date.now(); refreshPlan(); }
+    if (s.paused || planWaiting()) return;
+    if (s.plan.waitUntil) {
+      s.plan.waitUntil = null;
+      state.push('OPS_01', 'Plano renovado: os robôs voltaram ao trabalho');
+      refreshPlan();
+    }
+    resumeParked();
     if (Date.now() - lastSync > config.project.syncSeconds * 1000 && !syncing) {
       lastSync = Date.now();
       syncing = syncProject().catch((err) => state.alert('warn', `Não li o GitHub Project: ${err.message}`)).finally(() => (syncing = null));
     }
-    const ready = (t) => !t.blocked;
+    const ready = (t) => !t.blocked && !t.parked;
     // correções voltam para o mesmo dev antes de qualquer task nova
     for (const dev of byKind('dev')) {
       if (busy(dev.id)) continue;
@@ -346,6 +428,12 @@ export function createOrchestrator(config) {
   // segurança, sem rodar o dev de novo; sem nada salvo, o dev recomeça.
   function recover() {
     for (const t of s.board) {
+      // espera o plano renovar com o mesmo robô
+      if (t.parked) {
+        const id = t.parked.robotId;
+        if (s.robots[id]) state.setRobot(id, { status: 'idle', taskId: t.id, progress: 0, activity: `Esperando o plano renovar${s.plan.waitUntil ? ` (${hhmm(s.plan.waitUntil)})` : ''}` });
+        continue;
+      }
       if (t.column === 'refining') Object.assign(t, { column: 'todo', dev: null });
       if (t.column === 'security') t.secBy = null;
       if (t.column === 'qa') t.qa = null;

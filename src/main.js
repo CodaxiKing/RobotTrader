@@ -195,14 +195,48 @@ function renderSummary() {
   $('budget-label').textContent = `${usd(spent)} / ${budget}`;
   $('budget-fill').style.width = `${ratio * 100}%`;
   $('budget').classList.toggle('warn', ratio >= 0.8);
-  // pausa
+  // plano Claude
+  const waiting = renderPlan(feed.plan);
+  // pausa (a espera do plano aparece na mesma faixa, mas volta sozinha: sem botão de continuar)
   $('btn-pause').textContent = feed.paused ? '▶ Continuar' : '⏸ Pausar';
   $('btn-pause').classList.toggle('on', !!feed.paused);
-  $('paused-banner').hidden = !feed.paused;
-  $('paused-text').textContent = feed.paused ? `Escritório pausado: ${feed.pauseReason || 'pausado por você'}.` : '';
-  $('paused-budget').hidden = !/orçamento/.test(feed.pauseReason || '');
-  document.body.classList.toggle('is-paused', !!feed.paused);
+  $('paused-banner').hidden = !feed.paused && !waiting;
+  $('paused-text').textContent = feed.paused
+    ? `Escritório pausado: ${feed.pauseReason || 'pausado por você'}.`
+    : waiting ? `Limite do plano Claude acabou. As tasks ficam paradas com o mesmo robô e continuam sozinhas ${whenText(feed.plan.waitUntil)}.` : '';
+  $('paused-resume').hidden = !feed.paused;
+  $('paused-budget').hidden = !feed.paused || !/orçamento/.test(feed.pauseReason || '');
+  document.body.classList.toggle('is-paused', !!feed.paused || waiting);
 }
+
+// "às 15:00", ou "sáb às 04:00" quando não é hoje
+const whenText = (ms) => {
+  if (!ms) return 'quando o plano renovar';
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? `às ${time}` : `${d.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')} às ${time}`;
+};
+// barra do plano: o que resta da janela de 5h e da semana; devolve se os robôs estão esperando a renovação
+function renderPlan(plan) {
+  const chip = $('plan');
+  chip.hidden = !plan?.available;
+  if (!plan?.available) return false;
+  const left = (w) => (w ? Math.max(0, 100 - Math.round(w.used)) : null);
+  const session = left(plan.session);
+  const weekly = left(plan.weekly);
+  const lowest = Math.min(...[session, weekly].filter((v) => v != null));
+  const waiting = !!plan.waitUntil && plan.waitUntil > Date.now();
+  $('plan-label').textContent = waiting ? `Plano esgotado · volta ${whenText(plan.waitUntil).replace(/^às /, '')}` : `Plano ${plan.name || ''} · resta ${lowest}%`.replace('  ', ' ');
+  $('plan-session').style.width = `${session ?? 0}%`;
+  $('plan-weekly').style.width = `${weekly ?? 0}%`;
+  chip.classList.toggle('out', waiting || lowest <= 0);
+  chip.classList.toggle('warn', !waiting && lowest > 0 && lowest <= 20);
+  const line = (name, w, l) => (w ? `${name}: ${Math.round(w.used)}% usado, resta ${l}% · renova ${whenText(w.resetsAt)}` : `${name}: sem dado`);
+  chip.title = [`Plano Claude dos robôs${plan.name ? ` (${plan.name})` : ''}`, line('Janela de 5h (barra de cima)', plan.session, session), line('Semana (barra de baixo)', plan.weekly, weekly),
+    waiting ? `Esgotado: os robôs continuam sozinhos ${whenText(plan.waitUntil)}.` : 'Se acabar no meio de uma task, o robô espera e continua sozinho na renovação.'].join('\n');
+  return waiting;
+}
+$('plan').onclick = () => { openPanel('account'); refreshAccount(); };
 $('btn-pause').onclick = () => feed.setPaused(!feed.paused);
 $('paused-resume').onclick = () => feed.setPaused(false);
 $('paused-budget').onclick = () => feed.setBudget((feed.budget || OFFICE.dailyBudgetUsd) + 10);
