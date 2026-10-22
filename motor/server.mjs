@@ -40,6 +40,7 @@ const ROUTES = {
   'POST /api/decide': ({ id, approved }) => actions.decide(id, !!approved),
   'POST /api/unblock': ({ taskId }) => ({ ok: actions.unblock(String(taskId || '')) }),
   'POST /api/pause': ({ paused }) => actions.setPaused(!!paused),
+  'POST /api/mode': ({ mode }) => ({ mode: actions.setMode(mode) }),
   'POST /api/robot-pause': ({ id, paused }) => actions.setRobotPaused(id, !!paused),
   'POST /api/budget': ({ usd }) => actions.setBudget(Number(usd)),
   'POST /api/adjust': ({ id, note }) => actions.adjustIdea(id, String(note || '').slice(0, 500)),

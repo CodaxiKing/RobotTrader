@@ -28,6 +28,9 @@ export function createOrchestrator(config) {
   // IA dos robôs: Claude (Agent SDK) ou OpenCode, com o modelo escolhido para cada um; troca pelo escritório
   s.ai ||= { provider: config.ai?.provider || 'claude', models: { claude: config.model, opencode: config.ai?.opencodeModel || 'opencode/big-pickle' } };
   const currentAi = () => ({ provider: s.ai.provider, model: s.ai.models[s.ai.provider] });
+  // ritmo: 'one' = uma task por vez (e a pausa do piloto); 'all' = cada dev livre pega uma task da área dele
+  s.mode ||= config.limits?.maxActive === 1 ? 'one' : 'all';
+  const maxActive = () => (s.mode === 'one' ? 1 : config.limits?.maxParallel || Infinity);
   const aiLabel = () => `${s.ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${currentAi().model}`;
   const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit, ai: currentAi });
   const repoOf = (task) => config.repos[task.area];
@@ -341,7 +344,8 @@ export function createOrchestrator(config) {
       extras.onMerged(task);
       state.step(task, qaId, `Aprovou · merge${task.pr?.number ? ` do PR #${task.pr.number}` : ''} em ${base} · relatório pronto`);
       mergesThisRun++;
-      const stopAt = config.limits?.pauseAfterMerges;
+      // a pausa do piloto (revise antes da próxima) só vale no modo 1 por 1
+      const stopAt = s.mode === 'one' && config.limits?.pauseAfterMerges;
       if (stopAt && mergesThisRun >= stopAt) {
         setPaused(true, `piloto: ${mergesThisRun} entrega(s) em ${base}; revise e continue quando quiser`);
         state.alert('warn', `Piloto concluído: ${task.id} "${task.title}" foi para ${base}. Revise o merge e clique em Continuar.`, { taskId: task.id, panel: 'reports' });
@@ -428,8 +432,9 @@ export function createOrchestrator(config) {
       const back = s.board.find((t) => ready(t) && t.column === 'rework' && t.dev === dev.id);
       if (back) develop(back, dev.id);
     }
-    const active = s.board.filter((t) => ['refining', 'dev', 'security', 'qa', 'rework'].includes(t.column)).length;
-    if (!busy('PO_01') && active < (config.limits?.maxActive || Infinity)) {
+    // task travada esperando você não ocupa a vaga
+    const active = s.board.filter((t) => !t.blocked && ['refining', 'dev', 'security', 'qa', 'rework'].includes(t.column)).length;
+    if (!busy('PO_01') && active < maxActive()) {
       const free = byKind('dev').filter((d) => !busy(d.id) && !s.board.some((t) => t.column === 'rework' && t.dev === d.id));
       const next = s.board.find((t) => ready(t) && t.column === 'todo' && free.some((d) => d.area === t.area));
       if (next) refine(next, free.find((d) => d.area === next.area).id);
@@ -574,6 +579,13 @@ export function createOrchestrator(config) {
     actions: {
       decide,
       unblock: (taskId) => { const ok = unblock(taskId); state.changed(); return ok; },
+      setMode(mode) {
+        if (!['one', 'all'].includes(mode) || s.mode === mode) return s.mode;
+        s.mode = mode;
+        state.decision(mode === 'one' ? 'Escritório no modo 1 por 1: uma task por vez' : 'Escritório com todos trabalhando: cada dev livre pega uma task');
+        state.push('OPS_01', mode === 'one' ? 'Modo 1 por 1: as próximas tasks começam uma de cada vez (quem já está no meio termina)' : 'Todos trabalhando: cada dev livre pega a próxima task da área dele');
+        return s.mode;
+      },
       aiInfo,
       setAi,
       setPaused: (v) => setPaused(v),
