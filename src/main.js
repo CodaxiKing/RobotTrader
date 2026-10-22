@@ -393,21 +393,17 @@ ovBody.addEventListener('click', async (e) => {
     if (code) await accountCall('code', { code });
     return;
   }
-  const provider = e.target.closest('[data-ai-provider]');
-  if (provider) {
-    aiDraft = provider.dataset.aiProvider;
-    syncAiPicker();
-    ovBody.querySelector('[data-ai-model]')?.focus();
-    return;
-  }
-  if (e.target.closest('[data-ai-use]')) {
-    const ai = accountInfo?.ai;
-    if (!ai) return;
-    await aiCall({ provider: aiDraft || ai.provider, model: ovBody.querySelector('[data-ai-model]')?.value.trim() });
+  if (e.target.closest('[data-ai-toggle]')) return aiMenu(ovBody.querySelector('[data-ai-menu]')?.hidden);
+  const option = e.target.closest('[data-ai-option]');
+  if (option) {
+    aiMenu(false);
+    await aiCall({ provider: option.dataset.provider, model: option.dataset.aiOption });
     return;
   }
   if (e.target.closest('[data-ai-refresh]')) {
+    ovBody.querySelector('[data-ai-list]').innerHTML = '<p class="ai-empty">Atualizando a lista do OpenCode…</p>';
     await aiCall({ refresh: true });
+    renderAiList();
     return;
   }
   if (e.target.closest('[data-acc-logout]')) {
@@ -730,7 +726,7 @@ async function refreshAccount() {
   const a = accountInfo;
   const opencode = a?.ai?.provider === 'opencode';
   $('account-label').textContent = a?.error ? 'motor fora do ar'
-    : opencode ? `OpenCode · ${a.ai.model.split('/').pop()}`
+    : opencode ? aiCurrent(a.ai)?.name || a.ai.model.split('/').pop()
       : a?.email || (a?.using === 'maquina' ? 'esta máquina' : a?.using === 'apiKey' ? 'chave de API' : 'token');
   $('btn-account').title = a?.ai ? `IA dos robôs: ${opencode ? 'OpenCode' : 'Claude'} · ${a.ai.model}` : 'IA e conta que os robôs usam';
   $('btn-account').classList.toggle('warn', !opencode && a?.using === 'maquina');
@@ -738,39 +734,81 @@ async function refreshAccount() {
   // enquanto você autoriza no navegador, confere a cada 2 s
   if (a?.login?.waiting) setTimeout(refreshAccount, 2000);
 }
-// seletor de IA do painel: o provedor clicado vira rascunho até "Usar este modelo"
-let aiDraft = null;
+// seletor de IA do painel, no jeito do OpenCode: botão com o modelo atual e menu com busca, por provedor
+const aiModels = (ai) => [...(ai?.claude || []), ...(ai?.opencode || [])];
+const aiCurrent = (ai) => aiModels(ai).find((m) => m.id === ai.model && (m.provider === 'claude') === (ai.provider === 'claude'));
 function syncAiPicker() {
   const ai = accountInfo?.ai;
   const box = ovBody.querySelector('[data-ai-pick]');
   if (!ai || !box) return;
-  const provider = aiDraft || ai.provider;
-  box.querySelectorAll('[data-ai-provider]').forEach((b) => b.classList.toggle('on', b.dataset.aiProvider === provider));
-  const list = (provider === 'claude' ? ai.claude : ai.opencode) || [];
-  const datalist = box.querySelector('datalist');
-  const key = `${provider}:${list.length}`;
-  if (datalist.dataset.key !== key) { datalist.innerHTML = list.map((m) => `<option value="${esc(m)}"></option>`).join(''); datalist.dataset.key = key; }
-  const input = box.querySelector('[data-ai-model]');
-  if (input.dataset.provider !== provider) { input.value = ai.models?.[provider] || ''; input.dataset.provider = provider; }
-  box.querySelector('[data-ai-count]').textContent = provider === 'opencode'
-    ? ai.opencodeError ? `· ${ai.opencodeError}` : `· ${list.length} no OpenCode (os "-free" não custam nada)`
-    : `· ${list.length} modelos Claude`;
+  const m = aiCurrent(ai);
+  box.querySelector('[data-ai-name]').textContent = m?.name || ai.model;
+  box.querySelector('[data-ai-toggle]').title = `${ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${ai.model}`;
+  if (!box.querySelector('[data-ai-menu]').hidden) renderAiList();
 }
+const aiBadge = (m) => (m.plan ? '<em class="plan">Plano</em>' : m.free ? '<em>Grátis</em>'
+  : m.price ? `<em class="paid" title="US$ por milhão de tokens: entrada / saída">$${m.price.input} / $${m.price.output}</em>` : '');
+function renderAiList() {
+  const ai = accountInfo?.ai;
+  const list = ovBody.querySelector('[data-ai-list]');
+  if (!ai || !list) return;
+  const q = (ovBody.querySelector('[data-ai-q]')?.value || '').trim().toLowerCase();
+  const words = q.split(/\s+/).filter(Boolean);
+  // "grátis" ou "free" na busca também pega os modelos sem custo
+  const hit = (m) => words.every((w) => `${m.name} ${m.id} ${m.providerName} ${m.free ? 'grátis gratis free' : ''}`.toLowerCase().includes(w));
+  const current = aiCurrent(ai);
+  const groups = new Map();
+  for (const m of aiModels(ai).filter(hit)) {
+    if (!groups.has(m.providerName)) groups.set(m.providerName, []);
+    groups.get(m.providerName).push(m);
+  }
+  const order = (g) => (g.startsWith('Claude') ? 0 : g === 'OpenCode' ? 1 : 2);
+  list.innerHTML = [...groups].sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b)).map(([g, ms]) => `
+    <div class="ai-group">${esc(g)}</div>
+    ${ms.sort((a, b) => a.name.localeCompare(b.name)).map((m) => `
+      <button class="ai-option${m === current ? ' on' : ''}" role="option" data-ai-option="${esc(m.id)}" data-provider="${m.provider === 'claude' ? 'claude' : 'opencode'}" title="${esc(m.id)}${m.context ? ` · contexto ${Math.round(m.context / 1000)}k` : ''}">
+        <span>${esc(m.name)}</span>${aiBadge(m)}${m === current ? '<i>✓</i>' : ''}
+      </button>`).join('')}`).join('')
+    || `<p class="ai-empty">${ai.opencodeError ? esc(ai.opencodeError) : 'Nenhum modelo com esse nome.'}</p>`;
+  list.querySelector('.ai-option')?.classList.add('active');
+}
+function aiMenu(open) {
+  const menu = ovBody.querySelector('[data-ai-menu]');
+  if (!menu) return;
+  menu.hidden = !open;
+  ovBody.querySelector('[data-ai-toggle]').setAttribute('aria-expanded', String(!!open));
+  if (!open) return;
+  const q = ovBody.querySelector('[data-ai-q]');
+  q.value = '';
+  renderAiList();
+  ovBody.querySelector('.ai-option.on')?.scrollIntoView({ block: 'nearest' });
+  q.focus();
+}
+ovBody.addEventListener('input', (e) => { if (e.target.matches('[data-ai-q]')) renderAiList(); });
+ovBody.addEventListener('keydown', (e) => {
+  if (!e.target.matches('[data-ai-q]')) return;
+  const opts = [...ovBody.querySelectorAll('.ai-option')];
+  const i = opts.findIndex((o) => o.classList.contains('active'));
+  if (e.key === 'Escape') { e.stopPropagation(); aiMenu(false); return; }
+  if (e.key === 'Enter') { opts[i]?.click(); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const next = opts[Math.min(opts.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+  opts.forEach((o) => o.classList.toggle('active', o === next));
+  next?.scrollIntoView({ block: 'nearest' });
+});
+// clicar fora do menu fecha
+document.addEventListener('click', (e) => { if (!e.target.closest('[data-ai-pick]')) aiMenu(false); });
 async function aiCall(body) {
   try {
     const res = await fetch('./api/ai', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
-    if (!body.refresh) {
-      aiDraft = null;
-      toast({ level: 'info', text: `IA dos robôs: ${out.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${out.model}. Vale a partir do próximo passo de cada robô.` });
-    }
     if (accountInfo) accountInfo.ai = out;
+    if (!body.refresh) toast({ level: 'info', text: `IA dos robôs: ${aiCurrent(out)?.name || out.model}${out.provider === 'claude' ? ' (Claude)' : ' (OpenCode)'}. Vale a partir do próximo passo de cada robô.` });
   } catch (err) {
     toast({ level: 'danger', text: `Não troquei a IA: ${err.message}` });
   }
-  const input = ovBody.querySelector('[data-ai-model]');
-  if (input && !body.refresh) input.dataset.provider = '';
   refreshAccount();
 }
 async function accountCall(action, body = {}) {

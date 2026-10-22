@@ -240,13 +240,13 @@ export function createPanels({ feed, root, account = () => null, live = false })
       // a escolha do modelo e o e-mail ficam fora do trecho que redesenha, para não perder o que você digitou
       shell: () => `${live ? `
         <div class="ai-pick" data-ai-pick>
-          <div class="ai-providers">
-            <button data-ai-provider="claude">Claude<small>Agent SDK · conta Claude</small></button>
-            <button data-ai-provider="opencode">OpenCode<small>qualquer modelo do OpenCode</small></button>
+          <small>Modelo que os robôs usam</small>
+          <button class="ai-current" data-ai-toggle aria-haspopup="listbox" aria-expanded="false"><i>▣</i><b data-ai-name>carregando…</b><span>⌄</span></button>
+          <div class="ai-menu" data-ai-menu hidden>
+            <label class="ai-search"><i>⌕</i><input data-ai-q autocomplete="off" spellcheck="false" placeholder="Buscar modelos" /></label>
+            <div class="ai-list" data-ai-list role="listbox"></div>
+            <button class="ai-foot" data-ai-refresh><i>⟳</i>Atualizar a lista de modelos</button>
           </div>
-          <label>Modelo <small data-ai-count></small><input data-ai-model list="ai-models" autocomplete="off" spellcheck="false" placeholder="busque: claude, gpt, gemini, free…" /></label>
-          <datalist id="ai-models"></datalist>
-          <div class="ai-actions"><button data-ai-use>Usar este modelo</button><button class="link" data-ai-refresh>atualizar a lista</button></div>
         </div>` : ''}<div data-body></div>${live ? `
         <div class="acc-form">
           <label>E-mail da conta Claude que os robôs vão usar<input data-acc-email type="email" autocomplete="email" placeholder="voce@exemplo.com" /></label>
@@ -275,7 +275,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
           </div>` : ''}
           <div class="ov-floor">Conta Claude${onClaude ? '' : ' (vale quando a IA for Claude)'}</div>
           <div class="acc-now ${esc(a.using)}">
-            <small>Os robôs estão usando</small>
+            <small>${onClaude ? 'Os robôs estão usando' : 'Conta que os robôs usam com o Claude'}</small>
             <b>${esc(a.label)}</b>
             ${a.using === 'maquina' ? '<small>É a mesma conta do seu Claude Code: o uso dos robôs sai do seu limite. Conecte outra conta abaixo.</small>' : ''}
             ${override ? `<small>A conta ${esc(a.connected.email)} está conectada, mas a chave ou o token em motor/.env vence ela. Esvazie o .env para usá-la.</small>` : ''}

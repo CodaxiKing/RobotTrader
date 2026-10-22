@@ -475,7 +475,7 @@ export function createOrchestrator(config) {
     if (!model) throw new Error('escolha um modelo');
     if (provider === 'opencode') {
       const list = await agents.opencodeModels().catch(() => null);
-      if (list && !list.includes(model)) throw new Error(`o OpenCode não tem o modelo ${model} (veja \`opencode models\`)`);
+      if (list && !list.some((m) => m.id === model)) throw new Error(`o OpenCode não tem o modelo ${model} (veja \`opencode models\`)`);
     }
     s.ai.provider = provider;
     s.ai.models[provider] = model;

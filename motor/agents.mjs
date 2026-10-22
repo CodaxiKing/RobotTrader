@@ -6,7 +6,12 @@ import { query, USAGE_LIMIT_ERROR_PREFIXES } from '@anthropic-ai/claude-agent-sd
 import { createOpenCode } from './opencode.mjs';
 
 // modelos Claude que o escritório oferece (o motor/config.json pode usar outro)
-export const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
+export const CLAUDE_MODELS = [
+  { id: 'claude-opus-5-5', name: 'Claude Opus 5.5' },
+  { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5' },
+  { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5' },
+  { id: 'claude-fable-5-1', name: 'Claude Fable 5.1' },
+].map((m) => ({ ...m, provider: 'claude', providerName: 'Claude · sua conta', free: false, plan: true }));
 const PT_BR = 'Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.';
 
 // o limite do plano (5h ou semanal) acabou no meio do trabalho; resetsAt é quando renova (ms, ou null se não veio)
@@ -229,5 +234,5 @@ ${PT_BR}` },
     }
   }
 
-  return { run, usage, opencodeModels: (opts) => (dryRun ? Promise.resolve(['opencode/big-pickle', 'openrouter/~anthropic/claude-sonnet-latest']) : opencode.list(opts)) };
+  return { run, usage, opencodeModels: (opts) => opencode.list(opts) };
 }

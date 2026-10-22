@@ -6,6 +6,37 @@ import { spawn, execFile } from 'node:child_process';
 
 const BIN = process.env.OPENCODE_BIN || 'opencode';
 const agentName = (role) => `petlive-${role}`;
+const PROVIDERS = { opencode: 'OpenCode', openrouter: 'OpenRouter', anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google', 'github-copilot': 'GitHub Copilot' };
+const providerName = (id) => PROVIDERS[id] || id.charAt(0).toUpperCase() + id.slice(1);
+
+// `opencode models --verbose`: uma linha "provedor/modelo" seguida do JSON do modelo
+function parseModels(stdout) {
+  const out = [];
+  const lines = stdout.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^[\w.-]+\/\S+$/.test(lines[i])) continue;
+    const id = lines[i].trim();
+    let meta = null;
+    if (lines[i + 1]?.startsWith('{')) {
+      let end = i + 1;
+      while (end < lines.length && lines[end] !== '}') end++;
+      try { meta = JSON.parse(lines.slice(i + 1, end + 1).join('\n')); } catch { meta = null; }
+      i = end;
+    }
+    // os robôs trabalham com ferramentas (ler, editar, terminal): modelo sem chamada de ferramenta não serve
+    if (meta?.capabilities?.toolcall === false || meta?.status === 'deprecated') continue;
+    const provider = id.split('/')[0];
+    const cost = meta?.cost || {};
+    const paid = Number(cost.input) || Number(cost.output);
+    out.push({
+      id, provider, providerName: providerName(provider), name: meta?.name || id.split('/').slice(1).join('/'),
+      free: !!meta && !paid,
+      price: paid ? { input: Number(cost.input) || 0, output: Number(cost.output) || 0 } : null,
+      context: meta?.limit?.context || null,
+    });
+  }
+  return out;
+}
 // 'Bash(git push:*)' → 'git push*' (o formato de padrões do OpenCode)
 const bashPattern = (rule) => rule.match(/^Bash\((.+?)(?::\*)?\)$/)?.[1];
 
@@ -85,13 +116,14 @@ export function createOpenCode({ roles, suffix, log }) {
     });
   }
 
-  // modelos que o OpenCode tem agora (provedor/modelo); guarda por 10 minutos
+  // modelos que o OpenCode tem agora: { id: 'provedor/modelo', name, provider, providerName, free, price, context };
+  // guarda por 10 minutos; refresh também atualiza o catálogo do OpenCode (models.dev)
   function list({ refresh = false } = {}) {
     if (models && !refresh && Date.now() - models.at < 10 * 60e3) return Promise.resolve(models.list);
     return new Promise((resolve, reject) => {
-      execFile(BIN, ['models'], { windowsHide: true, timeout: 60000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+      execFile(BIN, ['models', '--verbose', ...(refresh ? ['--refresh'] : [])], { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => {
         if (err) return reject(new Error(err.code === 'ENOENT' ? 'OpenCode não encontrado nesta máquina' : err.message));
-        const list = stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[\w.-]+\/\S+$/.test(l));
+        const list = parseModels(stdout);
         models = { at: Date.now(), list };
         resolve(list);
       });

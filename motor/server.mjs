@@ -16,6 +16,8 @@ for (const k of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) if (!process.e
 const file = existsSync(here('./config.json')) ? here('./config.json') : here('./config.example.json');
 const config = JSON.parse(readFileSync(file, 'utf8'));
 if (process.argv.includes('--dry-run') || file.endsWith('config.example.json')) config.dryRun = true;
+// MOTOR_PORT roda um segundo motor (um ensaio, por exemplo) ao lado do de verdade
+if (process.env.MOTOR_PORT) config.port = Number(process.env.MOTOR_PORT);
 if (!config.dryRun) {
   for (const [area, repo] of Object.entries(config.repos)) {
     if (!existsSync(repo.path)) throw new Error(`Repositório ${area} não encontrado em ${repo.path} (motor/config.json)`);
