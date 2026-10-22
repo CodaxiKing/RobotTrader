@@ -3,7 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RobotTrader · Escritório</title>
+    <title>PetLive · Escritório</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23111'/><path d='M16 4l10 6v12l-10 6-10-6V10z' fill='none' stroke='%23ffc400' stroke-width='2.5'/></svg>" />
   </head>
   <body>
@@ -18,26 +20,50 @@
         </div>
       </div>
       <div class="total">
-        <div class="total-label">RESULTADO · ABERTOS + FECHADOS</div>
-        <div class="total-value" id="total-value">US$ 0,00</div>
+        <div class="total-label">ENTREGUES · MERGE EM DEVELOP</div>
+        <div class="total-value" id="total-value">0</div>
       </div>
-      <div class="seg" id="mode-seg" role="group" aria-label="Filtro de resultado">
-        <button data-mode="closed">Fechados</button>
-        <button data-mode="open">Abertos</button>
-        <button data-mode="both" class="on">Ambos</button>
-      </div>
+      <div class="pipeline" id="pipeline" aria-label="Board"></div>
       <div class="stats">
-        <span class="chip"><i class="dot working"></i><b id="count-working">0</b> em operação</span>
-        <span class="chip"><i class="dot idle"></i><b id="count-idle">0</b> em descanso</span>
+        <span class="chip"><i class="dot working"></i><b id="count-working">0</b> trabalhando</span>
+        <span class="chip"><i class="dot idle"></i><b id="count-idle">0</b> livres</span>
+        <button class="chip budget" id="budget" title="Gasto de hoje com os agentes · abre as métricas"><span id="budget-label">US$ 0,00</span><i class="budget-bar"><i id="budget-fill"></i></i></button>
+        <button class="chip plan" id="plan" hidden title="Quanto ainda resta do plano Claude dos robôs"><span id="plan-label">Plano</span><i class="budget-bar"><i id="plan-session"></i></i><i class="budget-bar"><i id="plan-weekly"></i></i></button>
+        <button class="chip action" id="btn-pause" title="Pausar ou retomar todos os robôs">⏸ Pausar</button>
+        <button class="chip action" id="btn-notify" title="Avisos do navegador">🔔</button>
+        <button class="chip action" id="btn-account" title="Conta Claude que os robôs usam">👤 <span id="account-label">Conta Claude</span></button>
+        <button class="chip action" id="btn-theme" title="Tema claro ou escuro">☀</button>
         <span class="chip clock" id="clock">--:--:--</span>
         <span class="chip live" id="live-chip"><i class="dot live-dot"></i><span id="live-label">conectando…</span></span>
       </div>
     </header>
 
-    <nav id="floorbar" aria-label="Andares"></nav>
-    <div id="viewbtns"><button id="btn-list">☰ Robôs</button><button id="btn-screens">▦ Telas</button></div>
+    <div id="paused-banner" hidden>
+      <span id="paused-text"></span>
+      <button id="paused-budget" hidden>Aumentar o limite em US$ 10</button>
+      <button id="paused-resume">Continuar</button>
+    </div>
+
+    <nav id="floorbar" aria-label="Zonas"></nav>
+    <div id="viewbtns">
+      <button id="btn-list" title="Lista de robôs">☰ Robôs</button>
+      <button id="btn-board" title="Board do GitHub">▤ Board</button>
+      <button id="btn-canvas" title="Canvas de design">◫ Canvas</button>
+      <button id="btn-ideas" title="O que espera a sua decisão">✦ Aprovações <span class="badge" id="ideas-badge" hidden></span></button>
+      <button id="btn-marketing" title="Agência de marketing">📣 Marketing</button>
+      <button id="btn-reports" title="Relatórios do QA">✔ Relatórios</button>
+      <button id="btn-releases" title="Produção, releases e changelog">⇪ Produção</button>
+      <button id="btn-today" title="Resumo do dia">☀ Hoje</button>
+      <button id="btn-metrics" title="Métricas do time">▥ Métricas</button>
+      <button id="btn-audit" title="Histórico completo">☷ Histórico</button>
+      <button id="btn-screens" title="Telas de todos os robôs">▦ Telas</button>
+      <button id="btn-tv" title="Modo TV: passa pelas zonas sozinho">▶ TV</button>
+    </div>
     <aside id="sidebar"></aside>
+    <canvas id="minimap" title="Mapa do salão: clique numa zona para ir até ela"></canvas>
     <div id="infocard" class="hidden"></div>
+    <div id="toasts" aria-live="polite"></div>
+    <button id="m-approvals" hidden>✦ Aprovações <span class="badge" id="m-badge"></span></button>
 
     <div id="overlay" class="hidden">
       <div class="ov-panel">
@@ -46,7 +72,7 @@
       </div>
     </div>
 
-    <div id="hint">Arraste para girar · Scroll para zoom · Botão direito para mover · Clique em um robô ou monitor · <kbd>R</kbd> reseta a vista</div>
+    <div id="hint">Arraste para girar · Scroll para zoom · Botão direito para mover · Clique em um robô, monitor ou painel · <kbd>R</kbd> reseta a vista</div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

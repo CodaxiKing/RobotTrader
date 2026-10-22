@@ -13,7 +13,9 @@ export function M(color, o = {}) {
 }
 
 // material que brilha (neon); com o bloom do compositor vira halo
-export const glow = (color, k = 1.8) => M(color, { emissive: color, emissiveIntensity: k, roughness: 0.4 });
+// NEON regula o brilho de todos os LEDs de uma vez (1 = original)
+export const NEON = 0.6;
+export const glow = (color, k = 1.8) => M(color, { emissive: color, emissiveIntensity: k * NEON, roughness: 0.4 });
 
 // caixa escalada a partir de uma geometria unitária compartilhada
 export function box(parent, w, h, d, material, x = 0, y = 0, z = 0, { cast = true, receive = true } = {}) {
