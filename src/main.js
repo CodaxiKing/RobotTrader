@@ -339,11 +339,22 @@ const screenView = (id) => {
   const s = feed.getState(id);
   return { s, robot: robotById(id), task: taskOf(s), board: feed.board, canvas: feed.canvas, events: feed.history.filter((e) => e.robotId === id) };
 };
-const { PANELS, taskHtml, pieceHtml } = createPanels({ feed, root: () => ovBody });
+// conta Claude que o motor usa (só existe com o motor no ar)
+let accountInfo = null;
+const { PANELS, taskHtml, pieceHtml } = createPanels({ feed, root: () => ovBody, account: () => accountInfo, live: LIVE });
 
 ovBody.addEventListener('click', async (e) => {
   const open = e.target.closest('[data-open]');
   if (open) return openPanel(open.dataset.open, { toggle: false });
+  if (e.target.closest('[data-acc-login]')) {
+    const email = ovBody.querySelector('[data-acc-email]')?.value.trim();
+    await accountCall('login', { email });
+    return;
+  }
+  if (e.target.closest('[data-acc-logout]')) {
+    if (window.confirm('Desconectar essa conta? Os robôs voltam a usar o login do Claude Code desta máquina.')) await accountCall('logout');
+    return;
+  }
   const copy = e.target.closest('[data-copy]');
   if (copy) {
     try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = 'Copiado ✔'; } catch { copy.textContent = 'Não deu para copiar'; }
@@ -649,6 +660,30 @@ function applyTheme(name) {
   minimap.draw(currentFloor, light);
 }
 $('btn-theme').onclick = () => applyTheme(theme === 'light' ? 'dark' : 'light');
+
+// ── conta Claude dos robôs: selo no topo e painel para conectar outra conta ──
+async function refreshAccount() {
+  if (!LIVE) return;
+  try {
+    const res = await fetch('./api/account', { cache: 'no-store' });
+    accountInfo = res.ok ? await res.json() : { error: `HTTP ${res.status}` };
+  } catch (err) { accountInfo = { error: err.message }; }
+  const a = accountInfo;
+  $('account-label').textContent = a?.error ? 'motor fora do ar' : a?.email || (a?.using === 'maquina' ? 'esta máquina' : a?.using === 'apiKey' ? 'chave de API' : 'token');
+  $('btn-account').classList.toggle('warn', a?.using === 'maquina');
+  if (overlayState?.kind === 'account') { overlayState.html = null; drawOverlay(); }
+  // enquanto você autoriza no navegador, confere a cada 2 s
+  if (a?.login?.waiting) setTimeout(refreshAccount, 2000);
+}
+async function accountCall(action, body = {}) {
+  try {
+    const res = await fetch(`./api/account/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    accountInfo = await res.json();
+  } catch (err) { accountInfo = { error: err.message }; }
+  refreshAccount();
+}
+$('btn-account').onclick = () => { openPanel('account'); refreshAccount(); };
+if (LIVE) { refreshAccount(); setInterval(refreshAccount, 30000); }
 setInterval(() => minimap.draw(currentFloor, theme === 'light'), 300);
 
 selectFloor(currentFloor, { fly: false });

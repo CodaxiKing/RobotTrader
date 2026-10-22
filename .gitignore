@@ -8,3 +8,4 @@ motor/config.json
 motor/state.json
 motor/state.json.tmp
 motor/.env
+motor/conta-claude/

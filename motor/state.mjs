@@ -40,13 +40,21 @@ export function createState({ budget }) {
 
   const listeners = new Set();
   let saveTimer = null;
+  let saveFailed = false;
   function changed() {
     s.updatedAt = now();
     listeners.forEach((fn) => fn(s));
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      writeFileSync(`${FILE}.tmp`, JSON.stringify(s));
-      renameSync(`${FILE}.tmp`, FILE);
+      // sem conseguir salvar (disco cheio, arquivo preso) o motor avisa e segue; o próximo save tenta de novo
+      try {
+        writeFileSync(`${FILE}.tmp`, JSON.stringify(s));
+        renameSync(`${FILE}.tmp`, FILE);
+        saveFailed = false;
+      } catch (err) {
+        if (!saveFailed) console.error(`Não consegui salvar motor/state.json: ${err.code || err.message}`);
+        saveFailed = true;
+      }
     }, 300);
   }
 

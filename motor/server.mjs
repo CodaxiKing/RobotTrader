@@ -6,17 +6,13 @@ import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createOrchestrator } from './orchestrator.mjs';
+import { createAccount } from './account.mjs';
 
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
-// motor/.env (fora do git): a conta que os robôs usam. CLAUDE_CODE_OAUTH_TOKEN (de `npm run motor:token`) usa o
-// plano de assinatura de outra conta; ANTHROPIC_API_KEY cobra por uso e vence o token. Sem nenhum dos dois, o
-// Agent SDK usa o login do Claude Code desta máquina, que divide o limite com o seu uso pessoal.
+// Conta dos robôs, em ordem: ANTHROPIC_API_KEY ou CLAUDE_CODE_OAUTH_TOKEN em motor/.env (fora do git); senão a
+// conta conectada pelo botão "Conectar conta Claude" (account.mjs); senão o login do Claude Code desta máquina.
 if (existsSync(here('./.env'))) process.loadEnvFile(here('./.env'));
 for (const k of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) if (!process.env[k]) delete process.env[k];
-const { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: token } = process.env;
-const account = key ? `chave de API …${key.slice(-4)} (cobrança por uso, motor/.env)`
-  : token ? `plano de assinatura da conta do token …${token.slice(-4)} (motor/.env)`
-  : 'login do Claude Code desta máquina (motor/.env vazio)';
 const file = existsSync(here('./config.json')) ? here('./config.json') : here('./config.example.json');
 const config = JSON.parse(readFileSync(file, 'utf8'));
 if (process.argv.includes('--dry-run') || file.endsWith('config.example.json')) config.dryRun = true;
@@ -28,8 +24,13 @@ if (!config.dryRun) {
 
 const motor = createOrchestrator(config);
 const { actions } = motor;
+// conta Claude dos robôs (botão "Conectar conta Claude" no escritório)
+const account = createAccount({ log: (text) => motor.state.push('OPS_01', text) });
 
 const ROUTES = {
+  'GET /api/account': () => account.status(),
+  'POST /api/account/login': async ({ email }) => { account.startLogin(String(email || '').trim()); return account.status(); },
+  'POST /api/account/logout': async () => { await account.logout(); return account.status(); },
   'POST /api/decide': ({ id, approved }) => actions.decide(id, !!approved),
   'POST /api/pause': ({ paused }) => actions.setPaused(!!paused),
   'POST /api/robot-pause': ({ id, paused }) => actions.setRobotPaused(id, !!paused),
@@ -66,7 +67,7 @@ const server = http.createServer(async (req, res) => {
 // só na máquina do dono: o servidor aprova releases e mexe em repositórios
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Motor do escritório em http://127.0.0.1:${config.port} · ${config.dryRun ? 'ENSAIO (dry-run)' : 'valendo'} · ${file.split(/[\\/]/).pop()}`);
-  console.log(`Conta da Anthropic: ${account}`);
+  account.status().then((st) => console.log(`Conta Claude dos robôs: ${st.label}`));
   console.log('Abra o escritório com ?live=1 (npm run dev em outro terminal).');
   motor.start();
 });

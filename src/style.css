@@ -477,3 +477,22 @@ body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); 
 .creative { width: 100%; box-sizing: border-box; }
 .mkt-board .col, .piece-card, .post-row > :first-child { min-width: 0; }
 .mkt-board .col { overflow: hidden; }
+
+/* conta Claude dos robôs */
+.chip.action.warn { border-color: rgba(245, 158, 11, 0.6); color: #f59e0b; }
+.acc-now { padding: 12px 14px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); display: grid; gap: 4px; margin-bottom: 10px; }
+.acc-now.maquina { border-color: rgba(245, 158, 11, 0.6); }
+.acc-now.conta { border-color: rgba(52, 211, 153, 0.6); }
+.acc-now small { color: var(--muted); font-size: 12px; }
+.acc-now b { font-size: 16px; }
+.acc-connected { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 10px; }
+.acc-connected button, .acc-form button { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 9px; cursor: pointer; }
+.acc-connected button { border: 1px solid rgba(255, 255, 255, 0.2); background: none; color: var(--text); }
+.acc-form { display: flex; align-items: flex-end; gap: 10px; margin: 12px 0 6px; }
+.acc-form label { flex: 1; display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.acc-form input { font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: var(--text); }
+.acc-form button { border: 1px solid var(--gold); background: rgba(255, 196, 0, 0.15); color: var(--gold); }
+.acc-wait { padding: 10px 12px; border-radius: 9px; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 13px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.acc-wait a { color: #38bdf8; font-weight: 700; }
+.acc-error { color: var(--down); font-size: 13px; }
+body.light .acc-form input { background: #fff; color: var(--text); }

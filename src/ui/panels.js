@@ -8,7 +8,8 @@ import { NETWORKS, STAGES, BRAND } from '../data/marketing.js';
 import { esc, who, fmtN } from './html.js';
 
 // root(): o elemento do overlay, para o histórico ler a busca que o dono digitou
-export function createPanels({ feed, root }) {
+// account(): a conta Claude que o motor está usando (GET /api/account), ou null; live: se há motor
+export function createPanels({ feed, root, account = () => null, live = false }) {
   const ORIGIN = {
     security: (t) => `🛡 achado da auditoria de ${who(t.from)}`,
     ops: (t) => `⚠ erro em produção visto por ${who(t.from)}`,
@@ -230,6 +231,38 @@ export function createPanels({ feed, root }) {
           <div class="queues">${m.queues.map((q) => `<div class="queue${m.bottleneck?.id === q.id ? ' hot' : ''}"><small>${esc(q.label)}</small><b>${q.size}</b><i style="width:${Math.min(100, q.load * 25)}%"></i><small>${q.robots} robô(s)</small></div>`).join('')}</div>
           <div class="ov-floor">Gasto por robô</div>
           <table class="costs"><tbody>${m.perRobot.slice(0, 12).map((r) => `<tr><td>${who(r.id)}</td><td>${usd(r.cost)}</td><td>${r.done} ${esc(doneLabel(robotById(r.id)))}</td></tr>`).join('')}</tbody></table>`;
+      },
+    },
+    account: {
+      title: 'Conta Claude dos robôs',
+      // o campo de e-mail fica fora do trecho que redesenha, para não perder o que você digitou
+      shell: () => `<div data-body></div>${live ? `
+        <div class="acc-form">
+          <label>E-mail da conta Claude que os robôs vão usar<input data-acc-email type="email" autocomplete="email" placeholder="voce@exemplo.com" /></label>
+          <button data-acc-login>Conectar conta Claude</button>
+        </div>
+        <p class="panel-hint">O navegador abre para você entrar e autorizar. Se ele já estiver logado em outra conta do claude.ai,
+        use uma janela anônima ou outro perfil: a autorização vai para a conta que estiver logada.</p>` : ''}`,
+      html: () => {
+        if (!live) {
+          return `<p class="panel-hint">Na simulação não há robôs de verdade, então não há conta. A conta Claude é usada pelo motor:
+            rode <code>npm run motor</code> e abra o escritório com <code>?live=1</code>; este painel passa a conectar a conta.</p>`;
+        }
+        const a = account();
+        if (!a) return '<p class="empty">Consultando o motor…</p>';
+        if (a.error) return `<p class="empty">Não consegui falar com o motor: ${esc(a.error)}</p>`;
+        const override = (a.using === 'apiKey' || a.using === 'token') && a.connected;
+        return `
+          <div class="acc-now ${esc(a.using)}">
+            <small>Os robôs estão usando</small>
+            <b>${esc(a.label)}</b>
+            ${a.using === 'maquina' ? '<small>É a mesma conta do seu Claude Code: o uso dos robôs sai do seu limite. Conecte outra conta abaixo.</small>' : ''}
+            ${override ? `<small>A conta ${esc(a.connected.email)} está conectada, mas a chave ou o token em motor/.env vence ela. Esvazie o .env para usá-la.</small>` : ''}
+          </div>
+          ${a.connected ? `<div class="acc-connected"><span>Conectada: <b>${esc(a.connected.email)}</b>${a.connected.plan ? ` · plano ${esc(a.connected.plan)}` : ''}</span><button data-acc-logout>Desconectar</button></div>` : ''}
+          ${a.login?.waiting ? `<div class="acc-wait">Esperando você autorizar ${a.login.email ? `<b>${esc(a.login.email)}</b>` : 'a conta'} no navegador…
+            ${a.login.url ? `<a href="${esc(a.login.url)}" target="_blank" rel="noopener">Abrir a página de login</a>` : ''}</div>` : ''}
+          ${a.login?.error ? `<p class="acc-error">${esc(a.login.error)}</p>` : ''}`;
       },
     },
     audit: {
