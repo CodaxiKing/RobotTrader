@@ -49,6 +49,8 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     budget: 0,
     // plano da conta Claude: { available, name, session: { used, resetsAt }, weekly, waitUntil } (motor/orchestrator.mjs)
     plan: null,
+    // IA escolhida: { provider: 'claude' | 'opencode', models: { claude, opencode } }
+    ai: null,
     updatedAt: null,
     error: null,
     canDecide: false, // só com o motor no ar
@@ -94,6 +96,7 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     api.pauseReason = data.pauseReason || null;
     api.budget = num(data.budget);
     api.plan = data.plan || null;
+    api.ai = data.ai || null;
     api.meeting = data.meeting || null;
     Object.assign(spend, { today: num(data.spend?.today), series: list(data.spend?.series).map(num) });
 

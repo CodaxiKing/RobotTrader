@@ -489,6 +489,18 @@ body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); 
 .acc-now { padding: 12px 14px; border-radius: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); display: grid; gap: 4px; margin-bottom: 10px; }
 .acc-now.maquina { border-color: rgba(245, 158, 11, 0.6); }
 .acc-now.conta { border-color: rgba(52, 211, 153, 0.6); }
+.acc-now.ai { border-color: rgba(154, 214, 248, 0.6); }
+/* escolha da IA dos robôs: provedor e modelo */
+.ai-pick { display: grid; gap: 10px; margin-bottom: 12px; }
+.ai-providers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ai-providers button { font: inherit; font-size: 14px; font-weight: 700; padding: 10px 12px; border-radius: 10px; cursor: pointer; text-align: left; display: grid; gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.03); color: var(--text); }
+.ai-providers button small { font-weight: 400; font-size: 11.5px; color: var(--muted); }
+.ai-providers button.on { border-color: #9ad6f8; background: rgba(154, 214, 248, 0.12); }
+.ai-pick label { display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); }
+.ai-pick input { font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(0, 0, 0, 0.3); color: var(--text); min-width: 0; }
+.ai-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ai-actions [data-ai-use] { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 9px; cursor: pointer; border: 1px solid #9ad6f8; background: rgba(154, 214, 248, 0.15); color: #9ad6f8; }
 .acc-now small { color: var(--muted); font-size: 12px; }
 .acc-now b { font-size: 16px; }
 .acc-connected { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 10px; }
@@ -502,6 +514,10 @@ body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); 
 .acc-wait a { color: #38bdf8; font-weight: 700; }
 .acc-error { color: var(--down); font-size: 13px; }
 body.light .acc-form input { background: #fff; color: var(--text); }
+body.light .ai-pick input { background: #fff; color: var(--text); border-color: rgba(0, 0, 0, 0.18); }
+body.light .ai-providers button { border-color: rgba(0, 0, 0, 0.14); }
+body.light .ai-providers button.on { border-color: #2b8fc9; background: rgba(43, 143, 201, 0.1); }
+body.light .ai-actions [data-ai-use] { color: #1f6f9e; border-color: #2b8fc9; }
 .acc-code { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; }
 .acc-code label { flex: 1; display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); }
 .acc-code input { font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(56, 189, 248, 0.5); background: rgba(0, 0, 0, 0.3); color: var(--text); }

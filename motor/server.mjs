@@ -28,7 +28,9 @@ const { actions } = motor;
 const account = createAccount({ log: (text) => motor.state.push('OPS_01', text) });
 
 const ROUTES = {
-  'GET /api/account': () => account.status(),
+  // a conta Claude e a IA escolhida (Claude ou OpenCode) com os modelos de cada uma
+  'GET /api/account': async () => ({ ...(await account.status()), ai: await actions.aiInfo() }),
+  'POST /api/ai': ({ provider, model, refresh }) => (refresh ? actions.aiInfo({ refresh: true }) : actions.setAi({ provider, model })),
   'POST /api/account/login': async ({ email }) => { account.startLogin(String(email || '').trim()); return account.status(); },
   'POST /api/account/code': async ({ code }) => { account.submitCode(code); return account.status(); },
   'POST /api/account/logout': async () => { await account.logout(); return account.status(); },

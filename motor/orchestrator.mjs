@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { ROBOTS, robotById } from '../src/data/robots.js';
 import { createState } from './state.mjs';
 import { createGit, createProject } from './git.mjs';
-import { createAgents, parseJson } from './agents.mjs';
+import { createAgents, parseJson, CLAUDE_MODELS } from './agents.mjs';
 import { createExtras } from './extras.mjs';
 
 const CANVAS = JSON.parse(readFileSync(fileURLToPath(new URL('../src/data/canvas.json', import.meta.url)), 'utf8'));
@@ -25,14 +25,18 @@ export function createOrchestrator(config) {
   const log = (text) => console.log(`  ${text}`);
   const git = createGit({ dryRun, log });
   const project = createProject({ run: git.run, ...config.project, dryRun });
-  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit });
+  // IA dos robôs: Claude (Agent SDK) ou OpenCode, com o modelo escolhido para cada um; troca pelo escritório
+  s.ai ||= { provider: config.ai?.provider || 'claude', models: { claude: config.model, opencode: config.ai?.opencodeModel || 'opencode/big-pickle' } };
+  const currentAi = () => ({ provider: s.ai.provider, model: s.ai.models[s.ai.provider] });
+  const aiLabel = () => `${s.ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${currentAi().model}`;
+  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit, ai: currentAi });
   const repoOf = (task) => config.repos[task.area];
 
   // ── plano da conta Claude: % usado nas janelas de 5h e semanal, e a espera quando acaba ──
   // Quando o limite acaba no meio, a task fica estacionada com o mesmo robô e o motor retoma sozinho na renovação.
   s.plan ||= { available: false, name: null, session: null, weekly: null, waitUntil: null, checkedAt: null };
   const hhmm = (ms) => new Date(ms).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', ...(ms - Date.now() > 20 * 3600e3 ? { weekday: 'short' } : {}) });
-  const planWaiting = () => !!s.plan.waitUntil && Date.now() < s.plan.waitUntil;
+  const planWaiting = () => s.ai.provider === 'claude' && !!s.plan.waitUntil && Date.now() < s.plan.waitUntil;
   let checkingPlan = null;
   function refreshPlan() {
     if (checkingPlan) return checkingPlan;
@@ -457,6 +461,32 @@ export function createOrchestrator(config) {
     }
   }
 
+  // ── IA dos robôs ──
+  async function aiInfo({ refresh = false } = {}) {
+    let opencode = [];
+    let opencodeError = null;
+    try { opencode = await agents.opencodeModels({ refresh }); } catch (err) { opencodeError = err.message; }
+    return { provider: s.ai.provider, model: currentAi().model, models: s.ai.models, claude: CLAUDE_MODELS, opencode, opencodeError };
+  }
+  // vale para o próximo passo de cada robô; quem está no meio de um termina com a IA de antes
+  async function setAi({ provider, model }) {
+    if (!['claude', 'opencode'].includes(provider)) throw new Error('IA desconhecida');
+    model = String(model || s.ai.models[provider] || '').trim();
+    if (!model) throw new Error('escolha um modelo');
+    if (provider === 'opencode') {
+      const list = await agents.opencodeModels().catch(() => null);
+      if (list && !list.includes(model)) throw new Error(`o OpenCode não tem o modelo ${model} (veja \`opencode models\`)`);
+    }
+    s.ai.provider = provider;
+    s.ai.models[provider] = model;
+    state.decision(`Trocou a IA dos robôs para ${aiLabel()}`);
+    state.push('OPS_01', `IA dos robôs agora é ${aiLabel()}`);
+    // esperando o plano Claude e trocou de IA: as tasks paradas seguem já na próxima volta
+    if (provider !== 'claude' && s.plan.waitUntil) s.plan.waitUntil = null;
+    state.changed();
+    return aiInfo();
+  }
+
   // ── ações do dono (vêm da tela pelo servidor) ──
   function setPaused(value, reason = null) {
     s.paused = value;
@@ -518,10 +548,12 @@ export function createOrchestrator(config) {
       syncProject().catch((err) => state.alert('warn', `Não li o GitHub Project: ${err.message}`));
       lastSync = Date.now();
       setInterval(schedule, 2000);
-      state.push('OPS_01', dryRun ? 'Motor ligado em modo de ensaio (sem API, sem git, sem GitHub)' : `Motor ligado · ${Object.keys(config.repos).join(' e ')} · Project #${config.project.number}`);
+      state.push('OPS_01', dryRun ? `Motor ligado em modo de ensaio (sem API, sem git, sem GitHub) · ${aiLabel()}` : `Motor ligado · ${Object.keys(config.repos).join(' e ')} · Project #${config.project.number} · ${aiLabel()}`);
     },
     actions: {
       decide,
+      aiInfo,
+      setAi,
       setPaused: (v) => setPaused(v),
       adjustIdea: (id, note) => extras.adjust(id, note),
       setRobotPaused(id, v) { if (s.robots[id]) { s.robots[id].paused = v; state.decision(`${v ? 'Pausou' : 'Retomou'} ${id}`); } },

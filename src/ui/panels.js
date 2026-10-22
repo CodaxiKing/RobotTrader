@@ -236,9 +236,18 @@ export function createPanels({ feed, root, account = () => null, live = false })
       },
     },
     account: {
-      title: 'Conta Claude dos robôs',
-      // o campo de e-mail fica fora do trecho que redesenha, para não perder o que você digitou
-      shell: () => `<div data-body></div>${live ? `
+      title: 'IA dos robôs',
+      // a escolha do modelo e o e-mail ficam fora do trecho que redesenha, para não perder o que você digitou
+      shell: () => `${live ? `
+        <div class="ai-pick" data-ai-pick>
+          <div class="ai-providers">
+            <button data-ai-provider="claude">Claude<small>Agent SDK · conta Claude</small></button>
+            <button data-ai-provider="opencode">OpenCode<small>qualquer modelo do OpenCode</small></button>
+          </div>
+          <label>Modelo <small data-ai-count></small><input data-ai-model list="ai-models" autocomplete="off" spellcheck="false" placeholder="busque: claude, gpt, gemini, free…" /></label>
+          <datalist id="ai-models"></datalist>
+          <div class="ai-actions"><button data-ai-use>Usar este modelo</button><button class="link" data-ai-refresh>atualizar a lista</button></div>
+        </div>` : ''}<div data-body></div>${live ? `
         <div class="acc-form">
           <label>E-mail da conta Claude que os robôs vão usar<input data-acc-email type="email" autocomplete="email" placeholder="voce@exemplo.com" /></label>
           <button data-acc-login>Conectar conta Claude</button>
@@ -254,7 +263,17 @@ export function createPanels({ feed, root, account = () => null, live = false })
         if (!a) return '<p class="empty">Consultando o motor…</p>';
         if (a.error) return `<p class="empty">Não consegui falar com o motor: ${esc(a.error)}</p>`;
         const override = (a.using === 'apiKey' || a.using === 'token') && a.connected;
+        const ai = a.ai;
+        const onClaude = !ai || ai.provider === 'claude';
         return `
+          ${ai ? `<div class="acc-now ai">
+            <small>Os robôs estão usando</small>
+            <b>${onClaude ? 'Claude' : 'OpenCode'} · ${esc(ai.model)}</b>
+            <small>${onClaude
+              ? 'Pela conta Claude abaixo. Se o plano acabar no meio, o robô espera a renovação e continua.'
+              : 'Pelo OpenCode desta máquina, com as contas e chaves dele (opencode auth login). O gasto informado pelo provedor entra no orçamento do dia; o plano Claude não é usado.'}</small>
+          </div>` : ''}
+          <div class="ov-floor">Conta Claude${onClaude ? '' : ' (vale quando a IA for Claude)'}</div>
           <div class="acc-now ${esc(a.using)}">
             <small>Os robôs estão usando</small>
             <b>${esc(a.label)}</b>

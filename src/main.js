@@ -219,8 +219,9 @@ const whenText = (ms) => {
 // barra do plano: o que resta da janela de 5h e da semana; devolve se os robôs estão esperando a renovação
 function renderPlan(plan) {
   const chip = $('plan');
-  chip.hidden = !plan?.available;
-  if (!plan?.available) return false;
+  const show = !!plan?.available && (feed.ai?.provider || 'claude') === 'claude';
+  chip.hidden = !show;
+  if (!show) return false;
   const left = (w) => (w ? Math.max(0, 100 - Math.round(w.used)) : null);
   const session = left(plan.session);
   const weekly = left(plan.weekly);
@@ -390,6 +391,23 @@ ovBody.addEventListener('click', async (e) => {
   if (e.target.closest('[data-acc-send]')) {
     const code = ovBody.querySelector('[data-acc-code]')?.value.trim();
     if (code) await accountCall('code', { code });
+    return;
+  }
+  const provider = e.target.closest('[data-ai-provider]');
+  if (provider) {
+    aiDraft = provider.dataset.aiProvider;
+    syncAiPicker();
+    ovBody.querySelector('[data-ai-model]')?.focus();
+    return;
+  }
+  if (e.target.closest('[data-ai-use]')) {
+    const ai = accountInfo?.ai;
+    if (!ai) return;
+    await aiCall({ provider: aiDraft || ai.provider, model: ovBody.querySelector('[data-ai-model]')?.value.trim() });
+    return;
+  }
+  if (e.target.closest('[data-ai-refresh]')) {
+    await aiCall({ refresh: true });
     return;
   }
   if (e.target.closest('[data-acc-logout]')) {
@@ -710,11 +728,50 @@ async function refreshAccount() {
     accountInfo = res.ok ? await res.json() : { error: `HTTP ${res.status}` };
   } catch (err) { accountInfo = { error: err.message }; }
   const a = accountInfo;
-  $('account-label').textContent = a?.error ? 'motor fora do ar' : a?.email || (a?.using === 'maquina' ? 'esta máquina' : a?.using === 'apiKey' ? 'chave de API' : 'token');
-  $('btn-account').classList.toggle('warn', a?.using === 'maquina');
-  if (overlayState?.kind === 'account') { overlayState.html = null; drawOverlay(); }
+  const opencode = a?.ai?.provider === 'opencode';
+  $('account-label').textContent = a?.error ? 'motor fora do ar'
+    : opencode ? `OpenCode · ${a.ai.model.split('/').pop()}`
+      : a?.email || (a?.using === 'maquina' ? 'esta máquina' : a?.using === 'apiKey' ? 'chave de API' : 'token');
+  $('btn-account').title = a?.ai ? `IA dos robôs: ${opencode ? 'OpenCode' : 'Claude'} · ${a.ai.model}` : 'IA e conta que os robôs usam';
+  $('btn-account').classList.toggle('warn', !opencode && a?.using === 'maquina');
+  if (overlayState?.kind === 'account') { overlayState.html = null; drawOverlay(); syncAiPicker(); }
   // enquanto você autoriza no navegador, confere a cada 2 s
   if (a?.login?.waiting) setTimeout(refreshAccount, 2000);
+}
+// seletor de IA do painel: o provedor clicado vira rascunho até "Usar este modelo"
+let aiDraft = null;
+function syncAiPicker() {
+  const ai = accountInfo?.ai;
+  const box = ovBody.querySelector('[data-ai-pick]');
+  if (!ai || !box) return;
+  const provider = aiDraft || ai.provider;
+  box.querySelectorAll('[data-ai-provider]').forEach((b) => b.classList.toggle('on', b.dataset.aiProvider === provider));
+  const list = (provider === 'claude' ? ai.claude : ai.opencode) || [];
+  const datalist = box.querySelector('datalist');
+  const key = `${provider}:${list.length}`;
+  if (datalist.dataset.key !== key) { datalist.innerHTML = list.map((m) => `<option value="${esc(m)}"></option>`).join(''); datalist.dataset.key = key; }
+  const input = box.querySelector('[data-ai-model]');
+  if (input.dataset.provider !== provider) { input.value = ai.models?.[provider] || ''; input.dataset.provider = provider; }
+  box.querySelector('[data-ai-count]').textContent = provider === 'opencode'
+    ? ai.opencodeError ? `· ${ai.opencodeError}` : `· ${list.length} no OpenCode (os "-free" não custam nada)`
+    : `· ${list.length} modelos Claude`;
+}
+async function aiCall(body) {
+  try {
+    const res = await fetch('./api/ai', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+    if (!body.refresh) {
+      aiDraft = null;
+      toast({ level: 'info', text: `IA dos robôs: ${out.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${out.model}. Vale a partir do próximo passo de cada robô.` });
+    }
+    if (accountInfo) accountInfo.ai = out;
+  } catch (err) {
+    toast({ level: 'danger', text: `Não troquei a IA: ${err.message}` });
+  }
+  const input = ovBody.querySelector('[data-ai-model]');
+  if (input && !body.refresh) input.dataset.provider = '';
+  refreshAccount();
 }
 async function accountCall(action, body = {}) {
   try {

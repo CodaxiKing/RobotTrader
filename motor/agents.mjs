@@ -1,7 +1,13 @@
-// Os agentes do escritório, rodando com o Claude Agent SDK (o harness do Claude Code como biblioteca).
+// Os agentes do escritório, rodando com o Claude Agent SDK (o harness do Claude Code como biblioteca)
+// ou com o OpenCode (motor/opencode.mjs), conforme a IA escolhida no escritório.
 // Cada papel tem as suas ferramentas: só o dev edita arquivos; segurança e QA leem e rodam comandos.
 // Commit, push e merge ficam com o orquestrador, nunca com o agente.
 import { query, USAGE_LIMIT_ERROR_PREFIXES } from '@anthropic-ai/claude-agent-sdk';
+import { createOpenCode } from './opencode.mjs';
+
+// modelos Claude que o escritório oferece (o motor/config.json pode usar outro)
+export const CLAUDE_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'];
+const PT_BR = 'Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.';
 
 // o limite do plano (5h ou semanal) acabou no meio do trabalho; resetsAt é quando renova (ms, ou null se não veio)
 export class PlanLimitError extends Error {
@@ -108,7 +114,9 @@ export function parseJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
+// ai(): a IA escolhida agora, { provider: 'claude' | 'opencode', model }; muda sem reiniciar o motor
+export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = () => ({ provider: 'claude', model }) }) {
+  const opencode = createOpenCode({ roles: ROLES, suffix: PT_BR, log });
   // ensaio: um plano de mentira que enche 3% por agente e renova 20 s depois de acabar, para ver a espera
   const fake = { used: 70, resetsAt: Date.now() + 10 * 60e3 };
   function fakeSpend() {
@@ -121,7 +129,9 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
   // roda um agente até o fim e devolve { text, cost, ok, turns }
   async function run(role, { prompt, cwd, budget, signal }) {
     const cfg = ROLES[role];
-    if (dryRun) { fakeSpend(); return dryRunAnswer(role); }
+    const chosen = ai();
+    if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role); }
+    if (chosen.provider === 'opencode') return opencode.run(role, { prompt, cwd, model: chosen.model, signal });
     const controller = new AbortController();
     signal?.addEventListener('abort', () => controller.abort());
     let result = null;
@@ -132,7 +142,7 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
       prompt,
       options: {
         cwd,
-        model,
+        model: chosen.model || model,
         allowedTools: cfg.tools,
         // terminal só pelo Bash (Git Bash no Windows): a ferramenta PowerShell quebra aqui ("Linha de comando muito
         // longa") e passaria por fora das travas de git acima, que são regras de Bash
@@ -140,7 +150,7 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit }) {
         permissionMode: role === 'dev' ? 'acceptEdits' : 'default',
         // o escritório e os relatórios são em português; sem isto os agentes respondem em inglês
         systemPrompt: { type: 'preset', preset: 'claude_code', append: `${cfg.prompt}
-Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` },
+${PT_BR}` },
         // carrega o CLAUDE.md e as configurações do próprio repositório do PetLive
         settingSources: ['project'],
         maxTurns: cfg.maxTurns,
@@ -197,6 +207,7 @@ Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` }
   // uso do plano da conta (o mesmo do /usage): abre uma sessão sem mandar mensagem, então não gasta nada.
   // null quando não há plano (chave de API) ou o Claude Code não respondeu
   async function usage() {
+    if (ai().provider !== 'claude') return null;
     if (dryRun) {
       if (Date.now() > fake.resetsAt) Object.assign(fake, { used: 0, resetsAt: Date.now() + 10 * 60e3 });
       return { available: true, name: 'ensaio', session: { ...fake }, weekly: { used: 40, resetsAt: Date.now() + 3 * 864e5 } };
@@ -218,5 +229,5 @@ Responda sempre em português do Brasil, inclusive nos textos dentro do JSON.` }
     }
   }
 
-  return { run, usage };
+  return { run, usage, opencodeModels: (opts) => (dryRun ? Promise.resolve(['opencode/big-pickle', 'openrouter/~anthropic/claude-sonnet-latest']) : opencode.list(opts)) };
 }
