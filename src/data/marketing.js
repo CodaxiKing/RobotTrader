@@ -291,8 +291,17 @@ export function createMarketing({ push, alert, addIdea, pick, rand, keep, canvas
     }
   };
 
+  // para a simulação lembrar da agência ao recarregar a página
+  const dump = () => ({ pieces, promotions, seq, promoted: [...promoted] });
+  function load(data) {
+    pieces.splice(0, pieces.length, ...(data.pieces || []).map((p) => ({ ...p, busy: null })));
+    promotions.splice(0, promotions.length, ...(data.promotions || []));
+    seq = data.seq || pieces.length;
+    (data.promoted || []).forEach((id) => promoted.add(id));
+  }
+
   return {
-    pieces, promotions,
+    pieces, promotions, dump, load,
     ticks: {
       mktlead: tickLead,
       script: route(tickScript),

@@ -18,7 +18,15 @@ import { NETWORKS, STAGES } from './data/marketing.js';
 // ── fonte de dados ──  simulada por padrão; ?live=1 lê ./status.json
 const params = new URLSearchParams(location.search);
 const LIVE = params.get('live') === '1';
-const feed = LIVE ? createLiveFeed({ url: './status.json', intervalMs: 5000 }) : createSimulatedFeed({ intervalMs: 1400 });
+// a simulação lembra de tudo (aprovações, prioridade, orçamento) ao recarregar; ?reset=1 recomeça do zero
+const SIM_KEY = 'petlive-office-sim';
+const simStorage = {
+  get() { try { return localStorage.getItem(SIM_KEY); } catch { return null; } },
+  set(v) { try { localStorage.setItem(SIM_KEY, v); } catch { /* sem armazenamento: só não lembra */ } },
+  clear() { try { localStorage.removeItem(SIM_KEY); } catch { /* idem */ } },
+};
+if (params.get('reset') === '1') simStorage.clear();
+const feed = LIVE ? createLiveFeed({ url: './status.json', intervalMs: 5000 }) : createSimulatedFeed({ intervalMs: 1400, storage: simStorage });
 
 // ── renderer / câmera isométrica ──
 const app = document.getElementById('app');
@@ -533,6 +541,7 @@ const PANELS = {
           <button data-budget="-5">− US$ 5</button><b>${usd(m.budget)}</b><button data-budget="5">+ US$ 5</button>
         </div>
         <canvas class="spend-chart" width="1120" height="260"></canvas>
+        ${feed.remembers ? '<p class="panel-hint">A simulação guarda tudo neste navegador. <button class="link" data-reset>Recomeçar do zero</button></p>' : ''}
         <div class="ov-floor">Filas ${m.bottleneck ? `· gargalo: ${esc(m.bottleneck.label)}` : ''}</div>
         <div class="queues">${m.queues.map((q) => `<div class="queue${m.bottleneck?.id === q.id ? ' hot' : ''}"><small>${esc(q.label)}</small><b>${q.size}</b><i style="width:${Math.min(100, q.load * 25)}%"></i><small>${q.robots} robô(s)</small></div>`).join('')}</div>
         <div class="ov-floor">Gasto por robô</div>
@@ -572,6 +581,10 @@ ovBody.addEventListener('click', async (e) => {
   const copy = e.target.closest('[data-copy]');
   if (copy) {
     try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = 'Copiado ✔'; } catch { copy.textContent = 'Não deu para copiar'; }
+    return;
+  }
+  if (e.target.closest('[data-reset]')) {
+    if (window.confirm('Apagar a simulação guardada e recomeçar do zero?')) { feed.reset(); location.search = ''; }
     return;
   }
   const budget = e.target.closest('[data-budget]');

@@ -137,11 +137,12 @@ export function createOrchestrator(config) {
     });
   }
 
-  function review(task) {
-    task.secBy = 'SEC_01';
-    return work('SEC_01', task, 'Revisando o diff', async () => {
-      state.step(task, 'SEC_01', 'Começou a revisão de segurança');
-      const text = await agent('SEC_01', 'sec', task, { prompt: `${brief(task)}\n\nRevise o que a branch ${task.branch} mudou: git diff origin/${base}...HEAD`, cwd: task.worktree });
+  function review(task, secId) {
+    task.secBy = secId;
+    task.secReviewer = secId;
+    return work(secId, task, 'Revisando o diff', async () => {
+      state.step(task, secId, 'Começou a revisão de segurança');
+      const text = await agent(secId, 'sec', task, { prompt: `${brief(task)}\n\nRevise o que a branch ${task.branch} mudou: git diff origin/${base}...HEAD`, cwd: task.worktree });
       const verdict = parseJson(text);
       task.secBy = null;
       const serious = (verdict.findings || []).filter((f) => f.severity !== 'baixa');
@@ -149,12 +150,12 @@ export function createOrchestrator(config) {
         task.findings.push(...serious.map((f) => ({ ...f, open: true })));
         Object.assign(task, { column: 'rework', returnedBy: 'security' });
         task.rework++;
-        state.step(task, 'SEC_01', `Falha ${serious[0]?.severity || 'média'}: ${serious[0]?.title || 'ver parecer'} · voltou para ${task.dev}`);
-        if (serious.some((f) => f.severity === 'alta')) state.alert('danger', `Falha alta em ${task.id}: ${serious[0].title}`, { robotId: 'SEC_01', taskId: task.id, panel: 'board' });
-        return meeting(task, 'SEC_01');
+        state.step(task, secId, `Falha ${serious[0]?.severity || 'média'}: ${serious[0]?.title || 'ver parecer'} · voltou para ${task.dev}`);
+        if (serious.some((f) => f.severity === 'alta')) state.alert('danger', `Falha alta em ${task.id}: ${serious[0].title}`, { robotId: secId, taskId: task.id, panel: 'board' });
+        return meeting(task, secId);
       }
       task.column = 'qa';
-      state.step(task, 'SEC_01', `Segurança ok${task.findings.length ? ` · ${task.findings.length} falha(s) corrigida(s)` : ''} · mandou para o QA`);
+      state.step(task, secId, `Segurança ok${task.findings.length ? ` · ${task.findings.length} falha(s) corrigida(s)` : ''} · mandou para o QA`);
     });
   }
 
@@ -180,7 +181,7 @@ export function createOrchestrator(config) {
       s.reports.push({
         taskId: task.id, title: task.title, area: task.area, dev: task.dev, qa: qaId, branch: task.branch,
         commits: task.commits.length, tests: task.tests, rework: task.rework, time: now(), cost: task.cost,
-        security: { reviewer: 'SEC_01', findings: task.findings.map(({ severity, title }) => ({ severity, title })) },
+        security: { reviewer: task.secReviewer || 'SEC_01', findings: task.findings.map(({ severity, title }) => ({ severity, title })) },
         summary: `${r.summary} Merge feito em ${base}; vai para ${prod} no próximo release.`,
       });
       state.keep(s.reports, 60);
@@ -254,9 +255,10 @@ export function createOrchestrator(config) {
       const next = s.board.find((t) => ready(t) && t.column === 'todo' && free.some((d) => d.area === t.area));
       if (next) refine(next, free.find((d) => d.area === next.area).id);
     }
-    if (!busy('SEC_01')) {
+    for (const sec of byKind('sec')) {
+      if (busy(sec.id)) continue;
       const next = s.board.find((t) => ready(t) && t.column === 'security' && !t.secBy);
-      if (next) review(next);
+      if (next) review(next, sec.id);
     }
     for (const qa of byKind('qa')) {
       if (busy(qa.id)) continue;

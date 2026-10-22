@@ -130,3 +130,22 @@ test('o canvas só marca como entregue a tela cuja task foi para o merge', () =>
     assert.equal(feed.task(sc.taskId)?.column ?? 'merged', 'merged', `${sc.name} marcada sem merge`);
   }
 });
+
+test('a simulação volta igual depois de recarregar (memória no storage)', async () => {
+  let saved = null;
+  const storage = { get: () => saved, set: (v) => (saved = v), clear: () => (saved = null) };
+  const a = createSimulatedFeed({ storage });
+  a.setBudget(1e6);
+  a.step(300);
+  const post = a.ideas.find((i) => i.status === 'aguardando');
+  a.approveIdea(post.id);
+  await new Promise((r) => setTimeout(r, 1200)); // o save é agrupado em 1 s
+  const b = createSimulatedFeed({ storage });
+  assert.deepEqual(b.board.map((t) => [t.id, t.column]), a.board.map((t) => [t.id, t.column]));
+  assert.equal(b.ideas.find((i) => i.id === post.id).status, 'aprovada');
+  assert.equal(b.budget, 1e6);
+  assert.ok(b.board.every((t) => t.createdAt instanceof Date), 'datas voltaram como texto');
+  b.step(50); // continua andando depois de restaurado
+  a.reset();
+  assert.equal(saved, null);
+});

@@ -65,6 +65,7 @@ const TEAM = [
   { id: 'APP_02', floor: 'dev', role: 'app' },
   { id: 'APP_03', floor: 'dev', role: 'app' },
   { id: 'SEC_01', floor: 'sec', role: 'sec', color: '#ef4444' },
+  { id: 'SEC_02', floor: 'sec', role: 'sec', color: '#f87171' },
   { id: 'QA_01', floor: 'qa', role: 'qaWeb' },
   { id: 'QA_02', floor: 'qa', role: 'qaWeb' },
   { id: 'QA_03', floor: 'qa', role: 'qaApp' },

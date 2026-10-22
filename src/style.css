@@ -397,3 +397,5 @@ body.tv #viewbtns { top: 74px; }
 .post-row .caption { max-height: 120px; overflow: hidden; font-size: 12px; }
 .post-row small { color: var(--muted); font-size: 11px; }
 .idea .decide button.mid { flex: 0 0 auto; border-color: var(--gold); background: rgba(255, 196, 0, 0.1); color: var(--gold); }
+
+button.link { font: inherit; background: none; border: 0; padding: 0; color: var(--gold); text-decoration: underline; cursor: pointer; }

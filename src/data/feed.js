@@ -137,7 +137,7 @@ const ACTIVITY = {
   idea: { dev: 'Analisando o código', design: 'Revisando as telas', ux: 'Analisando os fluxos', a11y: 'Testando com leitor de tela' },
 };
 
-export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}) {
+export function createSimulatedFeed({ intervalMs = 1400, historySize = 80, storage = null } = {}) {
   const listeners = new Set();
   const history = [];
   const audit = [];
@@ -160,7 +160,7 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
   let tickCount = 0;
 
   const byKind = (kind) => ROBOTS.filter((r) => r.kind === kind);
-  const emit = () => listeners.forEach((fn) => fn({ type: 'sync' }));
+  const emit = () => { listeners.forEach((fn) => fn({ type: 'sync' })); persist(); };
   const keep = (list, max) => { if (list.length > max) list.splice(0, list.length - max); };
 
   // tudo o que acontece vai para o histórico recente e para o histórico completo
@@ -331,6 +331,7 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
       const next = board.find((t) => t.column === 'security' && !t.secBy);
       if (next) {
         next.secBy = r.id;
+        next.secReviewer = r.id;
         Object.assign(s, { status: 'working', taskId: next.id, progress: 0, activity: ACTIVITY.sec[0] });
         step(next, r.id, 'Começou a revisão de segurança');
       } else if (Math.random() < 0.08) {
@@ -357,8 +358,10 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
       return idle(s);
     }
     const t = taskOf(s.taskId);
-    s.progress = Math.min(1, s.progress + rand(0.18, 0.3));
-    s.activity = ACTIVITY.sec[Math.min(4, Math.floor(s.progress * 5))];
+    // revisão leve: diff pequeno (até 2 commits) de uma task que ainda não teve falha anda mais rápido
+    const light = t.commits.length <= 2 && !t.findings.length;
+    s.progress = Math.min(1, s.progress + rand(0.18, 0.3) * (light ? 1.8 : 1));
+    s.activity = light && s.progress < 0.6 ? 'Revisão leve: diff pequeno' : ACTIVITY.sec[Math.min(4, Math.floor(s.progress * 5))];
     if (s.progress < 1) return;
     s.done++;
     t.secBy = null;
@@ -406,7 +409,7 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
       reports.push({
         taskId: t.id, title: t.title, area: t.area, dev: t.dev, qa: r.id, branch: t.branch,
         commits: t.commits.length, tests: t.tests, rework: t.rework, ts: new Date(), cost: t.cost,
-        security: { reviewer: 'SEC_01', findings: t.findings.map(({ severity, title }) => ({ severity, title })) },
+        security: { reviewer: t.secReviewer || 'SEC_01', findings: t.findings.map(({ severity, title }) => ({ severity, title })) },
         summary: `${t.title} implementado em ${t.branch} com ${t.commits.length} commits. Segurança: ${fixed ? `${fixed} falha(s) encontrada(s) e corrigida(s)` : 'sem falhas'}. ${total}/${total} testes passaram${t.rework ? ` após ${t.rework} correção(ões)` : ' na primeira rodada'}. Merge feito em ${OFFICE.baseBranch}; vai para ${OFFICE.productionBranch} no próximo release.`,
       });
       keep(reports, 40);
@@ -643,6 +646,45 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
     emit();
   }
 
+  // ── memória: o estado inteiro vai para o storage (localStorage no navegador) e volta ao recarregar ──
+  // storage: { get() -> string | null, set(string), clear() }
+  const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d/;
+  let saveTimer = null;
+  function snapshot() {
+    return {
+      v: 1, state: [...state], board, reports, ideas, delivered, releases, changelog, incidents, insights, spend, history, audit, alerts,
+      canvas: { screens: canvas.screens, changes: canvas.changes }, marketing: marketing.dump(),
+      seq, mergedTotal, ideaSeq, alertSeq, tickCount, meeting, paused, pauseReason, budget,
+    };
+  }
+  function persist() {
+    if (!storage || saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      try { storage.set(JSON.stringify(snapshot())); } catch { /* storage cheio ou bloqueado: segue sem memória */ }
+    }, 1000);
+  }
+  function restore() {
+    let data = null;
+    try { data = JSON.parse(storage?.get() || 'null', (k, v) => (typeof v === 'string' && ISO.test(v) ? new Date(v) : v)); } catch { return; }
+    if (data?.v !== 1) return;
+    const fill = (list, items) => list.splice(0, list.length, ...(items || []));
+    for (const [id, s] of data.state) if (state.has(id)) Object.assign(state.get(id), s);
+    fill(board, data.board); fill(reports, data.reports); fill(ideas, data.ideas); fill(delivered, data.delivered);
+    fill(releases, data.releases); fill(changelog, data.changelog); fill(incidents, data.incidents); fill(insights, data.insights);
+    fill(history, data.history); fill(audit, data.audit); fill(alerts, data.alerts);
+    fill(canvas.screens, data.canvas.screens); fill(canvas.changes, data.canvas.changes);
+    Object.assign(spend, data.spend);
+    marketing.load(data.marketing);
+    ({ seq, mergedTotal, ideaSeq, alertSeq, tickCount, meeting, paused, pauseReason, budget } = data);
+    Object.assign(api, { paused, pauseReason, budget });
+  }
+  // recomeça do zero: apaga a memória e recarrega
+  function reset() {
+    clearTimeout(saveTimer);
+    storage?.clear();
+  }
+
   // ── ações do dono ──
   // decisão sobre o que está aguardando: sugestão vira task no Backlog; release vai para produção
   function decideIdea(id, approved) {
@@ -796,7 +838,10 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80 } = {}
     start() { if (!timer) { timer = setInterval(tick, intervalMs); queueMicrotask(tick); } },
     // avança n rodadas na hora, sem relógio (testes e depuração)
     step(n = 1) { for (let i = 0; i < n; i++) tick(); },
+    reset,
+    remembers: !!storage,
     stop() { clearInterval(timer); timer = null; },
   };
+  restore();
   return api;
 }
