@@ -1,14 +1,29 @@
 {
-  "updatedAt": "2026-10-21T15:00:00Z",
+  "updatedAt": "2026-10-22T15:00:00Z",
+  "deliveredTotal": 1,
   "robots": [
-    {
-      "id": "PA_01", "status": "operating", "setup": "SETUP 3.1", "symbol": "EURUSD", "side": "BUY",
-      "openPnl": 12.34, "closedPnl": 265.14, "balance": 25000,
-      "trades": [{ "time": "2026-10-21T14:10:00Z", "symbol": "EURUSD", "side": "SELL", "setup": "SETUP 2.1", "pnl": 41.2 }]
-    },
-    { "id": "PA_02", "status": "rest", "closedPnl": -0.02, "balance": 10000 }
+    { "id": "PO_01", "status": "working", "activity": "Escrevendo critérios de aceite", "taskId": "#103", "progress": 0.5, "done": 3 },
+    { "id": "WEB_01", "status": "working", "activity": "Escrevendo código", "taskId": "#102", "progress": 0.4, "done": 1, "commits": 5 },
+    { "id": "QA_01", "status": "idle", "activity": "Livre", "done": 1 },
+    { "id": "UX_01", "status": "idle", "activity": "Pausa", "done": 1 }
+  ],
+  "board": [
+    { "id": "#101", "title": "Agenda de banho e tosa", "area": "web", "column": "merged", "dev": "WEB_01", "qa": "QA_01", "branch": "feat/agenda-de-banho-e-tosa",
+      "commits": [{ "sha": "a1b2c3d", "message": "feat(agenda): agenda de banho e tosa", "time": "2026-10-22T14:20:00Z" }],
+      "tests": { "total": 32, "passed": 32, "failed": 0 }, "rework": 0 },
+    { "id": "#102", "title": "Cadastro de pets com foto", "area": "web", "column": "dev", "dev": "WEB_01", "branch": "feat/cadastro-de-pets-com-foto", "commits": [] },
+    { "id": "#103", "title": "Lembrete de vacina por push", "area": "app", "column": "refining" },
+    { "id": "#104", "title": "Login com Google e Apple", "area": "app", "column": "todo" }
+  ],
+  "reports": [
+    { "taskId": "#101", "title": "Agenda de banho e tosa", "area": "web", "dev": "WEB_01", "qa": "QA_01", "branch": "feat/agenda-de-banho-e-tosa",
+      "commits": 1, "tests": { "total": 32, "passed": 32, "failed": 0 }, "rework": 0, "time": "2026-10-22T14:40:00Z",
+      "summary": "Agenda de banho e tosa implementada com 1 commit. 32/32 testes passaram na primeira rodada. Merge feito em develop." }
+  ],
+  "ideas": [
+    { "id": "S1", "focus": "ux", "title": "Onboarding em 3 passos", "detail": "Cadastro do primeiro pet logo após o login.", "by": "UX_01", "time": "2026-10-22T13:00:00Z", "status": "aguardando" }
   ],
   "events": [
-    { "time": "2026-10-21T14:10:00Z", "robotId": "PA_01", "text": "Fechou EURUSD SELL · +41.20" }
+    { "time": "2026-10-22T14:40:00Z", "robotId": "QA_01", "text": "Aprovou #101 · merge em develop · relatório pronto" }
   ]
 }

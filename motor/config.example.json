@@ -1,0 +1,22 @@
+{
+  "dryRun": true,
+  "port": 8787,
+  "model": "claude-opus-5-5",
+  "dailyBudgetUsd": 20,
+  "budgets": { "default": 2, "po": 0.5, "dev": 5, "sec": 1.5, "qa": 2, "chat": 0.2 },
+  "baseBranch": "develop",
+  "productionBranch": "main",
+  "releaseBatch": 4,
+  "meetingAfter": 2,
+  "appLabels": ["app", "mobile", "react-native"],
+  "project": {
+    "owner": "SEU-USUARIO-OU-ORG",
+    "number": 1,
+    "syncSeconds": 60,
+    "statuses": { "todo": "Todo", "doing": "In Progress", "done": "Done" }
+  },
+  "repos": {
+    "web": { "path": "C:/Users/SEU-USUARIO/Documents/GitHub/petlive-web", "testCommand": "npm test" },
+    "app": { "path": "C:/Users/SEU-USUARIO/Documents/GitHub/petlive-app", "testCommand": "npm test" }
+  }
+}
