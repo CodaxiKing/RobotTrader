@@ -8,11 +8,15 @@ import { fileURLToPath } from 'node:url';
 import { createOrchestrator } from './orchestrator.mjs';
 
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
-// motor/.env (fora do git): ANTHROPIC_API_KEY da conta que os robôs usam. Sem ele, o Agent SDK usa o
-// login do Claude Code desta máquina, que divide o limite com o seu uso pessoal.
+// motor/.env (fora do git): a conta que os robôs usam. CLAUDE_CODE_OAUTH_TOKEN (de `npm run motor:token`) usa o
+// plano de assinatura de outra conta; ANTHROPIC_API_KEY cobra por uso e vence o token. Sem nenhum dos dois, o
+// Agent SDK usa o login do Claude Code desta máquina, que divide o limite com o seu uso pessoal.
 if (existsSync(here('./.env'))) process.loadEnvFile(here('./.env'));
-const key = process.env.ANTHROPIC_API_KEY;
-const account = key ? `chave de API …${key.slice(-4)} (motor/.env)` : 'login do Claude Code desta máquina (sem chave em motor/.env)';
+for (const k of ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']) if (!process.env[k]) delete process.env[k];
+const { ANTHROPIC_API_KEY: key, CLAUDE_CODE_OAUTH_TOKEN: token } = process.env;
+const account = key ? `chave de API …${key.slice(-4)} (cobrança por uso, motor/.env)`
+  : token ? `plano de assinatura da conta do token …${token.slice(-4)} (motor/.env)`
+  : 'login do Claude Code desta máquina (motor/.env vazio)';
 const file = existsSync(here('./config.json')) ? here('./config.json') : here('./config.example.json');
 const config = JSON.parse(readFileSync(file, 'utf8'));
 if (process.argv.includes('--dry-run') || file.endsWith('config.example.json')) config.dryRun = true;
