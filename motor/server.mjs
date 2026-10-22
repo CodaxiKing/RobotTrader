@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { createOrchestrator } from './orchestrator.mjs';
 
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
+// motor/.env (fora do git): ANTHROPIC_API_KEY da conta que os robôs usam. Sem ele, o Agent SDK usa o
+// login do Claude Code desta máquina, que divide o limite com o seu uso pessoal.
+if (existsSync(here('./.env'))) process.loadEnvFile(here('./.env'));
+const key = process.env.ANTHROPIC_API_KEY;
+const account = key ? `chave de API …${key.slice(-4)} (motor/.env)` : 'login do Claude Code desta máquina (sem chave em motor/.env)';
 const file = existsSync(here('./config.json')) ? here('./config.json') : here('./config.example.json');
 const config = JSON.parse(readFileSync(file, 'utf8'));
 if (process.argv.includes('--dry-run') || file.endsWith('config.example.json')) config.dryRun = true;
@@ -57,6 +62,7 @@ const server = http.createServer(async (req, res) => {
 // só na máquina do dono: o servidor aprova releases e mexe em repositórios
 server.listen(config.port, '127.0.0.1', () => {
   console.log(`Motor do escritório em http://127.0.0.1:${config.port} · ${config.dryRun ? 'ENSAIO (dry-run)' : 'valendo'} · ${file.split(/[\\/]/).pop()}`);
+  console.log(`Conta da Anthropic: ${account}`);
   console.log('Abra o escritório com ?live=1 (npm run dev em outro terminal).');
   motor.start();
 });

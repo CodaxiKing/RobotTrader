@@ -110,7 +110,7 @@ export function createProject({ run, owner, number, statuses, dryRun }) {
   return {
     async items() {
       if (dryRun) return [];
-      const out = JSON.parse(await gh('project', 'item-list', String(number), '--owner', owner, '--format', 'json', '--limit', '200'));
+      const out = JSON.parse(await gh('project', 'item-list', String(number), '--owner', owner, '--format', 'json', '--limit', '1000'));
       return out.items || [];
     },
     async move(itemId, status) {

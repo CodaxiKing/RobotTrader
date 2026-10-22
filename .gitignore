@@ -7,3 +7,4 @@ public/status.json.tmp
 motor/config.json
 motor/state.json
 motor/state.json.tmp
+motor/.env
