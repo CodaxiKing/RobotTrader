@@ -9,6 +9,7 @@ import { ROBOTS, robotById } from '../src/data/robots.js';
 import { createState } from './state.mjs';
 import { createGit, createProject } from './git.mjs';
 import { createAgents, parseJson } from './agents.mjs';
+import { createExtras } from './extras.mjs';
 
 const CANVAS = JSON.parse(readFileSync(fileURLToPath(new URL('../src/data/canvas.json', import.meta.url)), 'utf8'));
 const slug = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
@@ -186,6 +187,7 @@ export function createOrchestrator(config) {
       });
       state.keep(s.reports, 60);
       s.changelog.push({ time: now(), taskId: task.id, kind: task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo', text: `${task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo'}: ${task.title}` });
+      extras.onMerged(task);
       state.step(task, qaId, `Aprovou · merge em ${base} · relatório pronto`);
       await project.move(task.itemId, 'done');
       await git.removeWorktree(repo, task.worktree);
@@ -228,11 +230,13 @@ export function createOrchestrator(config) {
     await work('OPS_01', null, `Fazendo o deploy do ${version}`, async () => {
       for (const area of new Set(tasks.map((t) => t.area))) await git.mergeInto(config.repos[area], base, prod);
       tasks.forEach((t) => { t.released = version; t.timeline.push({ ts: now(), robotId: 'OPS_01', text: `Foi para produção no ${version}` }); });
-      const news = tasks.filter((t) => t.origin !== 'security' && t.origin !== 'ops').map((t) => t.title);
-      s.releases.push({ version, time: now(), tasks: tasks.map((t) => ({ id: t.id, title: t.title, area: t.area })), notes: `Novidades: ${news.join(', ') || '—'}.` });
+      const notes = await extras.releaseNotes(tasks);
+      s.releases.push({ version, time: now(), tasks: tasks.map((t) => ({ id: t.id, title: t.title, area: t.area })), notes });
       state.push('OPS_01', `${version} em ${prod} (aprovado por você)`, { kind: 'release' });
     });
   }
+
+  const extras = createExtras({ config, state, agent, work, git, repoOf });
 
   // ── agenda: a cada volta, quem está livre pega o próximo trabalho ──
   let syncing = null;
@@ -266,6 +270,7 @@ export function createOrchestrator(config) {
       if (next) test(next, qa.id);
     }
     proposeRelease();
+    extras.tick();
   }
 
   // ── ações do dono (vêm da tela pelo servidor) ──
@@ -280,6 +285,8 @@ export function createOrchestrator(config) {
     if (!idea) return;
     Object.assign(idea, { status: approved ? 'aprovada' : 'recusada', decidedAt: now() });
     state.decision(`${approved ? 'Aprovou' : 'Recusou'}: ${idea.title}`);
+    // posts e divulgação são da agência
+    if (extras.decide(idea, approved)) return;
     if (!approved) return;
     if (idea.focus === 'release') return release(idea);
     // sugestão aprovada vira item do GitHub Project (e task no board)
@@ -330,6 +337,7 @@ export function createOrchestrator(config) {
     actions: {
       decide,
       setPaused: (v) => setPaused(v),
+      adjustIdea: (id, note) => extras.adjust(id, note),
       setRobotPaused(id, v) { if (s.robots[id]) { s.robots[id].paused = v; state.decision(`${v ? 'Pausou' : 'Retomou'} ${id}`); } },
       setBudget(usd) {
         s.budget = Math.max(1, Math.round(usd));

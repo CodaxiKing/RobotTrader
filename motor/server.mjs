@@ -25,6 +25,7 @@ const ROUTES = {
   'POST /api/pause': ({ paused }) => actions.setPaused(!!paused),
   'POST /api/robot-pause': ({ id, paused }) => actions.setRobotPaused(id, !!paused),
   'POST /api/budget': ({ usd }) => actions.setBudget(Number(usd)),
+  'POST /api/adjust': ({ id, note }) => actions.adjustIdea(id, String(note || '').slice(0, 500)),
   'POST /api/prioritize': ({ taskId, beforeId }) => actions.prioritize(taskId, beforeId || null),
   'POST /api/ask': async ({ robotId, text }) => ({ answer: await actions.ask(robotId, String(text || '').slice(0, 2000)) }),
 };

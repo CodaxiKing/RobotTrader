@@ -20,6 +20,7 @@ export function createState({ budget }) {
     deliveredTotal: 0,
     robots: Object.fromEntries(ROBOTS.map((r) => [r.id, { status: 'idle', activity: 'Livre', taskId: null, progress: 0, done: 0, commits: 0, cost: 0, paused: false }])),
     board: [], reports: [], ideas: [], releases: [], changelog: [], incidents: [], insights: [],
+    marketing: { pieces: [], promotions: [] },
     alerts: [], audit: [], events: [], meeting: null, canvas: null,
     seq: { idea: 0, alert: 0 },
   };
@@ -28,7 +29,8 @@ export function createState({ budget }) {
     try {
       s = { ...fresh, ...JSON.parse(readFileSync(FILE, 'utf8')) };
       // ninguém está trabalhando de verdade logo depois de um reinício
-      for (const [id, r] of Object.entries(s.robots)) s.robots[id] = { ...fresh.robots[id], ...r, status: 'idle', activity: 'Livre', taskId: null, progress: 0 };
+      // robôs novos na equipe entram zerados; os que já existiam guardam a contagem e o gasto
+      s.robots = Object.fromEntries(Object.keys(fresh.robots).map((id) => [id, { ...fresh.robots[id], ...(s.robots?.[id] || {}), status: 'idle', activity: 'Livre', taskId: null, progress: 0 }]));
       s.meeting = null;
     } catch (err) {
       console.warn(`motor/state.json ilegível (${err.message}); começando do zero`);

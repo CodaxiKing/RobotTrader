@@ -9,6 +9,12 @@
   "releaseBatch": 4,
   "meetingAfter": 2,
   "appLabels": ["app", "mobile", "react-native"],
+  "extras": {
+    "docs": true,
+    "canvas": { "everyMinutes": 30, "maxPhase": 1 },
+    "ideas": { "everyMinutes": 120 },
+    "marketing": { "everyMinutes": 180, "maxActive": 2 }
+  },
   "project": {
     "owner": "SEU-USUARIO-OU-ORG",
     "number": 1,

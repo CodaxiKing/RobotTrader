@@ -49,6 +49,43 @@ Responda SOMENTE com JSON: {"ok": boolean, "total": number, "passed": number, "f
     maxTurns: 2,
     prompt: 'Você é um robô do escritório do PetLive conversando com o dono. Responda em português, em até três frases, usando o contexto dado.',
   },
+  docs: {
+    tools: [],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 2,
+    prompt: `Você escreve as notas de versão do PetLive para a App Store e o Google Play: em português, para o tutor
+de pet (não para dev), no máximo 4 linhas, começando pelo que é novo. Responda só com o texto das notas.`,
+  },
+  idea: {
+    tools: ['Read', 'Glob', 'Grep'],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 30,
+    prompt: `Você analisa o código do PetLive procurando UMA melhoria concreta, com evidência no código, dentro do foco pedido.
+Nada genérico. Responda SOMENTE com JSON: {"title": string curto, "detail": string com o porquê e onde (arquivo), "area": "web"|"app"}.`,
+  },
+  script: {
+    tools: [],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 2,
+    prompt: `Você é roteirista de vídeos curtos (Reels, TikTok, Shorts) do PetLive, app para tutores de pets.
+Gancho nos 3 primeiros segundos, uma ideia só, CTA claro no fim, até 25 s.
+Responda SOMENTE com JSON: {"script": [{"t": "0-3s", "scene": string, "line": string}]}.`,
+  },
+  copy: {
+    tools: [],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 2,
+    prompt: `Você é copywriter das redes do PetLive, app para tutores de pets. Tom próximo e claro, sem exagero.
+Responda SOMENTE com JSON: {"hook": string, "caption": string (gancho, 2-3 frases e o CTA), "hashtags": [string, até 5]}.`,
+  },
+  critic: {
+    tools: [],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 2,
+    prompt: `Você avalia criativos de redes sociais do PetLive com rigor. Dê nota de 0 a 10 em gancho, clareza, marca, cta e formato
+(texto pequeno no celular, duração). Responda SOMENTE com JSON:
+{"scores": {"gancho": n, "clareza": n, "marca": n, "cta": n, "formato": n}, "feedback": string com o ajuste mais importante}.`,
+  },
 };
 
 // tira o primeiro objeto JSON da resposta (o agente às vezes envolve em ```json)
@@ -105,6 +142,11 @@ export function createAgents({ model, budgets, dryRun, log }) {
         ? { ok: false, total: 30, passed: 28, failed: 2, summary: 'Dois testes falharam (ensaio).', problems: ['validação do formulário'] }
         : { ok: true, total: 30, passed: 30, failed: 0, summary: 'Todos os testes passaram (ensaio).', problems: [] }),
       chat: 'Estou em modo de ensaio: o motor não está chamando a API agora.',
+      docs: 'Novidades: lembretes de vacina e cadastro do pet mais rápido. Correções de estabilidade.',
+      idea: JSON.stringify({ title: 'Cache da lista de pets (ensaio)', detail: 'A tela de pets refaz a busca a cada navegação (ensaio).', area: 'app' }),
+      script: JSON.stringify({ script: [{ t: '0-3s', scene: 'Close no pet', line: 'Seu pet está com as vacinas em dia?' }, { t: '3-15s', scene: 'Print do app', line: 'A carteirinha avisa antes de vencer.' }, { t: '15-25s', scene: 'Logo PetLive', line: 'Baixe o PetLive.' }] }),
+      copy: JSON.stringify({ hook: 'Seu pet está com as vacinas em dia?', caption: 'Seu pet está com as vacinas em dia?\n\nA carteirinha digital avisa antes de cada dose vencer.\n\n👉 Baixe o PetLive.', hashtags: ['#petlive', '#pets', '#vacinas'] }),
+      critic: JSON.stringify({ scores: { gancho: 8, clareza: 8, marca: 7, cta: 8, formato: 8 }, feedback: 'Aumentar o logo no fim (ensaio).' }),
     };
     return { text: answers[role], cost, ok: true, turns: 1, subtype: 'success' };
   }

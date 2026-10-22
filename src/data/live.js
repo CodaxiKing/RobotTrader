@@ -53,6 +53,7 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     getState: (id) => state.get(id),
     task: (id) => lists.board.find((t) => t.id === id),
     approveIdea: (id) => act('decide', { id, approved: true }),
+    adjustIdea: (id, note) => act('adjust', { id, note }),
     rejectIdea: (id) => act('decide', { id, approved: false }),
     setPaused: (paused) => act('pause', { paused }),
     setRobotPaused: (id, paused) => act('robot-pause', { id, paused }),
@@ -128,6 +129,8 @@ export function createLiveFeed({ url = './status.json', intervalMs = 3000 } = {}
     const total = Number.isFinite(data.deliveredTotal) ? data.deliveredTotal : lists.reports.length;
     if (lists.delivered.at(-1) !== total || !lists.delivered.length) lists.delivered.push(total);
     if (lists.delivered.length > 120) lists.delivered.shift();
+    // agência de marketing do motor
+    if (data.marketing) api.marketing = { pieces: list(data.marketing.pieces).map((p) => ({ ...p, feedback: list(p.feedback), script: list(p.script), hashtags: list(p.hashtags), timeline: list(p.timeline) })), promotions: list(data.marketing.promotions) };
     if (data.canvas) {
       const c = data.canvas;
       api.canvas = {

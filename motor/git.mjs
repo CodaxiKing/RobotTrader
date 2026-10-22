@@ -1,7 +1,7 @@
 // Git e GitHub para o motor. Os robôs nunca mexem no checkout do dono: cada task tem o seu
 // worktree, e o merge acontece num worktree de integração. Em dry-run, só registra o comando.
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export function createGit({ dryRun, log }) {
@@ -53,6 +53,26 @@ export function createGit({ dryRun, log }) {
       await git(dir, 'checkout', '-B', into, `origin/${into}`);
       await git(dir, 'merge', '--no-ff', `origin/${from}`, '-m', `Merge ${from} into ${into}`);
       await git(dir, 'push', 'origin', `HEAD:${into}`);
+    },
+    // uma linha no CHANGELOG.md da base, com commit e push, feita no worktree de integração
+    async appendChangelog(repo, base, line) {
+      const dir = path.join(worktreesOf(repo), '_integration');
+      if (!dryRun && !existsSync(dir)) {
+        mkdirSync(worktreesOf(repo), { recursive: true });
+        await git(repo.path, 'worktree', 'add', '--detach', dir);
+      }
+      await git(dir, 'fetch', 'origin');
+      await git(dir, 'checkout', '-B', base, `origin/${base}`);
+      if (!dryRun) {
+        const file = path.join(dir, 'CHANGELOG.md');
+        // a linha nova entra logo abaixo do título, a mais recente em cima
+        const old = existsSync(file) ? readFileSync(file, 'utf8') : '# Changelog\n';
+        const [head, ...rest] = old.split('\n');
+        writeFileSync(file, [head, '', `- ${line}`, ...rest.filter((l, i) => i > 0 || l)].join('\n'));
+      }
+      await git(dir, 'add', 'CHANGELOG.md');
+      await git(dir, 'commit', '-m', `docs(changelog): ${line}`);
+      await git(dir, 'push', 'origin', `HEAD:${base}`);
     },
     async removeWorktree(repo, dir) {
       await git(repo.path, 'worktree', 'remove', '--force', dir).catch(() => {});
