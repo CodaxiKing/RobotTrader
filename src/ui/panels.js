@@ -261,7 +261,8 @@ export function createPanels({ feed, root, account = () => null, live = false })
           </div>
           ${a.connected ? `<div class="acc-connected"><span>Conectada: <b>${esc(a.connected.email)}</b>${a.connected.plan ? ` · plano ${esc(a.connected.plan)}` : ''}</span><button data-acc-logout>Desconectar</button></div>` : ''}
           ${a.login?.waiting ? `<div class="acc-wait">Esperando você autorizar ${a.login.email ? `<b>${esc(a.login.email)}</b>` : 'a conta'} no navegador…
-            ${a.login.url ? `<a href="${esc(a.login.url)}" target="_blank" rel="noopener">Abrir a página de login</a>` : ''}</div>` : ''}
+            ${a.login.url ? `<a href="${esc(a.login.url)}" target="_blank" rel="noopener">Abrir a página de login</a>` : ''}</div>
+          ${a.login.needsCode ? `<div class="acc-code"><label>Depois de autorizar, a página mostra um código. Cole aqui:<input data-acc-code autocomplete="off" placeholder="código do navegador" /></label><button data-acc-send>Enviar código</button></div>` : ''}` : ''}
           ${a.login?.error ? `<p class="acc-error">${esc(a.login.error)}</p>` : ''}`;
       },
     },

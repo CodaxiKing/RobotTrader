@@ -21,7 +21,8 @@ const run = (args) => new Promise((resolve) => {
 });
 
 export function createAccount({ log }) {
-  let login = null; // { email, url, startedAt, error }
+  let login = null; // { email, url, startedAt, error, done }
+  let child = null;
 
   async function dirStatus() {
     if (!existsSync(DIR)) return { loggedIn: false };
@@ -53,7 +54,8 @@ export function createAccount({ log }) {
       plan: using === 'conta' ? st.subscriptionType : null,
       // a conta da pasta fica conectada mesmo quando uma chave ou token no .env vence ela
       connected: st.loggedIn ? { email: st.email, plan: st.subscriptionType } : null,
-      login: login && { email: login.email, url: login.url, error: login.error, waiting: !login.done },
+      // sem terminal, o Claude Code usa o fluxo em que o navegador mostra um código para colar
+      login: login && { email: login.email, url: login.url, error: login.error, waiting: !login.done, needsCode: !!login.url && /code=true/.test(login.url) },
     };
   }
 
@@ -64,7 +66,7 @@ export function createAccount({ log }) {
     mkdirSync(DIR, { recursive: true });
     login = { email, url: null, error: null, done: false, startedAt: Date.now() };
     const args = ['auth', 'login', '--claudeai', ...(email ? ['--email', email] : [])];
-    const child = spawn(EXE, args, { env: ENV(), windowsHide: true });
+    child = spawn(EXE, args, { env: ENV(), windowsHide: true });
     const read = (buf) => {
       const text = String(buf);
       const url = text.match(/https:\/\/\S+/)?.[0];
@@ -83,6 +85,13 @@ export function createAccount({ log }) {
     });
   }
 
+  // o código que o navegador mostrou depois de autorizar vai para o login que está esperando
+  function submitCode(code) {
+    if (!child || login?.done) throw new Error('Nenhum login esperando código; clique em Conectar de novo');
+    child.stdin.write(`${String(code).trim()}
+`);
+  }
+
   async function logout() {
     if (existsSync(DIR)) await run(['auth', 'logout']);
     login = null;
@@ -90,5 +99,5 @@ export function createAccount({ log }) {
     log('Conta Claude dos robôs desconectada; voltam ao login desta máquina');
   }
 
-  return { status, startLogin, logout };
+  return { status, startLogin, submitCode, logout };
 }

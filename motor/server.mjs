@@ -30,6 +30,7 @@ const account = createAccount({ log: (text) => motor.state.push('OPS_01', text) 
 const ROUTES = {
   'GET /api/account': () => account.status(),
   'POST /api/account/login': async ({ email }) => { account.startLogin(String(email || '').trim()); return account.status(); },
+  'POST /api/account/code': async ({ code }) => { account.submitCode(code); return account.status(); },
   'POST /api/account/logout': async () => { await account.logout(); return account.status(); },
   'POST /api/decide': ({ id, approved }) => actions.decide(id, !!approved),
   'POST /api/pause': ({ paused }) => actions.setPaused(!!paused),

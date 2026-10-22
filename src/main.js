@@ -351,6 +351,11 @@ ovBody.addEventListener('click', async (e) => {
     await accountCall('login', { email });
     return;
   }
+  if (e.target.closest('[data-acc-send]')) {
+    const code = ovBody.querySelector('[data-acc-code]')?.value.trim();
+    if (code) await accountCall('code', { code });
+    return;
+  }
   if (e.target.closest('[data-acc-logout]')) {
     if (window.confirm('Desconectar essa conta? Os robôs voltam a usar o login do Claude Code desta máquina.')) await accountCall('logout');
     return;
