@@ -443,7 +443,8 @@ body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); 
 
 /* criativos nos templates da marca PetLive (cores e fonte do artboard "Paleta de cores") */
 .creative { container-type: inline-size; }
-.creative[class*='tpl-'] { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #fff; color: #111; justify-content: flex-start; padding: 11cqw 8cqw 8cqw; gap: 4cqw; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
+/* padding e gap do próprio criativo em %: cqw nele mediria o container de fora, não ele */
+.creative[class*='tpl-'] { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #fff; color: #111; justify-content: flex-start; padding: 11% 8% 8%; gap: 0.35em; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08); }
 .creative[class*='tpl-'] .net { color: inherit; font-size: 4.2cqw; top: 3.5cqw; left: 5cqw; z-index: 2; }
 .creative[class*='tpl-'] .play, .creative[class*='tpl-'] .slides { font-size: 5cqw; z-index: 2; }
 .creative .cr-title { position: relative; z-index: 1; font-weight: 800; font-size: 9cqw; line-height: 1.12; letter-spacing: -0.01em; }
