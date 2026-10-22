@@ -123,6 +123,16 @@ export function createOrchestrator(config) {
     if (!res.ok) throw new Error(`o agente parou (${res.subtype})`);
     return res.text;
   }
+  const shortTitle = (t) => t.title.replace(/^\[[^\]]+\]\s*/, '');
+  const commitMessage = (t, type) => `${type}(${slug(shortTitle(t)).split('-')[0]}): ${shortTitle(t).toLowerCase()}`;
+  // descrição do PR: o que a task pede, os critérios do P.O e o que o dev fez
+  const prBody = (t, devId, summary) => [
+    `## Task\n${t.title}${t.itemId ? ` (${t.id} no GitHub Project)` : ''}${t.priority ? ` · ${t.priority}` : ''}${t.fase ? ` · ${t.fase}` : ''}`,
+    t.body ? `## Descrição\n${t.body}` : '',
+    t.criteria ? `## Critérios de aceite (P.O)\n${t.criteria}` : '',
+    `## O que o dev fez (${devId})\n${summary}`,
+    `---\nAberto pelo escritório de robôs. A segurança e o QA comentam aqui; o merge em \`${base}\` acontece quando o QA aprova.`,
+  ].filter(Boolean).join('\n\n');
   const brief = (t) => `Task ${t.id}: ${t.title}\n\n${t.body || ''}${t.criteria ? `\n\nCritérios de aceite:\n${t.criteria}` : ''}`;
 
   // P.O: critérios de aceite e passa para um dev livre da área
@@ -152,14 +162,26 @@ export function createOrchestrator(config) {
         : '';
       const summary = await agent(devId, 'dev', task, { prompt: `${brief(task)}${toFix}`, cwd: task.worktree });
       const type = fixing || task.origin === 'security' || task.origin === 'ops' ? 'fix' : 'feat';
-      const commits = await git.commitAndPush(task.worktree, task.branch, base, `${type}(${slug(task.title).split('-')[0]}): ${task.title.toLowerCase()}`);
+      const commits = await git.commitAndPush(task.worktree, task.branch, base, commitMessage(task, type));
       const known = new Set(task.commits.map((c) => c.sha));
       for (const c of commits) if (!known.has(c.sha)) task.commits.push({ ...c, time: now() });
       s.robots[devId].commits += commits.length;
       task.findings.forEach((f) => (f.open = false));
-      task.column = 'security';
       state.step(task, devId, `Push em ${task.branch} · ${summary.split('\n')[0].slice(0, 160)}`);
+      await publishPr(task, devId, summary, fixing);
+      task.column = 'security';
     });
+  }
+
+  // abre o PR depois do primeiro push; nas correções, comenta no mesmo PR o que mudou
+  async function publishPr(task, devId, summary, fixing) {
+    const repo = repoOf(task);
+    if (!task.pr) {
+      task.pr = await git.openPr(repo, { head: task.branch, base, title: task.title, body: prBody(task, devId, summary) });
+      state.step(task, devId, `Abriu o pull request${task.pr.number ? ` #${task.pr.number}` : ''} para ${base}`);
+    } else if (fixing) {
+      await git.commentPr(repo, task.pr, `🔧 **Correções enviadas (${devId})**\n\n${summary}`);
+    }
   }
 
   function review(task, secId) {
@@ -176,10 +198,12 @@ export function createOrchestrator(config) {
         Object.assign(task, { column: 'rework', returnedBy: 'security' });
         task.rework++;
         state.step(task, secId, `Falha ${serious[0]?.severity || 'média'}: ${serious[0]?.title || 'ver parecer'} · voltou para ${task.dev}`);
+        await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): voltou para correção**\n\n${serious.map((f) => `- **${f.severity}** · ${f.title}${f.file ? ` (\`${f.file}\`)` : ''}\n  ${f.fix}`).join('\n')}`);
         if (serious.some((f) => f.severity === 'alta')) state.alert('danger', `Falha alta em ${task.id}: ${serious[0].title}`, { robotId: secId, taskId: task.id, panel: 'board' });
         return meeting(task, secId);
       }
       task.column = 'qa';
+      await git.commentPr(repoOf(task), task.pr, `🛡 **Revisão de segurança (${secId}): ok**${task.findings.length ? `\n\n${task.findings.length} falha(s) apontadas antes foram corrigidas.` : ''}${(verdict.findings || []).length ? `\n\nObservações de gravidade baixa:\n${verdict.findings.map((f) => `- ${f.title}: ${f.fix}`).join('\n')}` : ''}`);
       state.step(task, secId, `Segurança ok${task.findings.length ? ` · ${task.findings.length} falha(s) corrigida(s)` : ''} · mandou para o QA`);
     });
   }
@@ -196,23 +220,27 @@ export function createOrchestrator(config) {
         Object.assign(task, { column: 'rework', qa: null, returnedBy: 'qa', problems: r.problems?.length ? r.problems : [r.summary] });
         task.rework++;
         state.step(task, qaId, `Reprovou: ${r.summary}`);
+        await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): voltou para correção** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}\n\n${task.problems.map((p) => `- ${p}`).join('\n')}`);
         return meeting(task, qaId);
       }
-      await git.mergeInto(repo, task.branch, base);
+      await git.commentPr(repo, task.pr, `🧪 **QA (${qaId}): aprovado** · ${task.tests.passed}/${task.tests.total}\n\n${r.summary}`);
+      // merge pelo PR (o mesmo que clicar em Merge no GitHub); sem PR, como antes, pelo worktree de integração
+      if (task.pr?.number) await git.mergePr(repo, task.pr, `Merge #${task.pr.number}: ${shortTitle(task)}`);
+      else await git.mergeInto(repo, task.branch, base);
       Object.assign(task, { column: 'merged', mergedAt: now() });
       s.deliveredTotal++;
       const sc = task.screen && s.canvas.screens.find((x) => x.file === task.screen);
       if (sc) { Object.assign(sc, { status: 'entregue', outdated: false }); s.canvas.changes.push({ time: now(), text: `Marcou "${sc.name}" como entregue (${task.id})` }); }
       s.reports.push({
         taskId: task.id, title: task.title, area: task.area, dev: task.dev, qa: qaId, branch: task.branch,
-        commits: task.commits.length, tests: task.tests, rework: task.rework, time: now(), cost: task.cost,
+        commits: task.commits.length, tests: task.tests, rework: task.rework, time: now(), cost: task.cost, pr: task.pr || null,
         security: { reviewer: task.secReviewer || 'SEC_01', findings: task.findings.map(({ severity, title }) => ({ severity, title })) },
         summary: `${r.summary} Merge feito em ${base}; vai para ${prod} no próximo release.`,
       });
       state.keep(s.reports, 60);
       s.changelog.push({ time: now(), taskId: task.id, kind: task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo', text: `${task.origin === 'security' || task.origin === 'ops' ? 'Corrigido' : 'Novo'}: ${task.title}` });
       extras.onMerged(task);
-      state.step(task, qaId, `Aprovou · merge em ${base} · relatório pronto`);
+      state.step(task, qaId, `Aprovou · merge${task.pr?.number ? ` do PR #${task.pr.number}` : ''} em ${base} · relatório pronto`);
       mergesThisRun++;
       const stopAt = config.limits?.pauseAfterMerges;
       if (stopAt && mergesThisRun >= stopAt) {
@@ -258,9 +286,17 @@ export function createOrchestrator(config) {
     const version = idea.title.match(/v[\d.]+/)[0];
     const tasks = idea.tasks.map((id) => state.task(id)).filter(Boolean);
     await work('OPS_01', null, `Fazendo o deploy do ${version}`, async () => {
-      for (const area of new Set(tasks.map((t) => t.area))) await git.mergeInto(config.repos[area], base, prod);
-      tasks.forEach((t) => { t.released = version; t.timeline.push({ ts: now(), robotId: 'OPS_01', text: `Foi para produção no ${version}` }); });
       const notes = await extras.releaseNotes(tasks);
+      // um PR de release por repositório (web e app podem ser o mesmo monorepo)
+      const repos = [...new Map(tasks.map((t) => [repoOf(t).path, repoOf(t)])).values()];
+      for (const repo of repos) {
+        const list = tasks.filter((t) => repoOf(t).path === repo.path).map((t) => `- ${t.title}${t.pr?.number ? ` (#${t.pr.number})` : ''}`).join('\n');
+        const pr = await git.openPr(repo, { head: base, base: prod, title: `Release ${version}`, body: `## Notas\n${notes}\n\n## Entregas\n${list}\n\n---\nAprovado pelo dono no escritório de robôs.` });
+        if (pr.number) await git.mergePr(repo, pr, `Release ${version}`);
+        else await git.mergeInto(repo, base, prod);
+        state.push('OPS_01', `PR de release${pr.number ? ` #${pr.number}` : ''} ${base} → ${prod} mergeado`, { kind: 'release' });
+      }
+      tasks.forEach((t) => { t.released = version; t.timeline.push({ ts: now(), robotId: 'OPS_01', text: `Foi para produção no ${version}` }); });
       s.releases.push({ version, time: now(), tasks: tasks.map((t) => ({ id: t.id, title: t.title, area: t.area })), notes });
       state.push('OPS_01', `${version} em ${prod} (aprovado por você)`, { kind: 'release' });
     });
@@ -317,11 +353,12 @@ export function createOrchestrator(config) {
       if (!t.worktree) { t.column = 'todo'; t.dev = null; continue; }
       const type = t.rework || t.origin === 'security' || t.origin === 'ops' ? 'fix' : 'feat';
       work(t.dev, t, 'Retomando depois do reinício', async () => {
-        const commits = await git.commitAndPush(t.worktree, t.branch, base, `${type}(${slug(t.title.replace(/^\[[^\]]+\]\s*/, '')).split('-')[0]}): ${t.title.replace(/^\[[^\]]+\]\s*/, '').toLowerCase()}`);
+        const commits = await git.commitAndPush(t.worktree, t.branch, base, commitMessage(t, type));
         const known = new Set(t.commits.map((c) => c.sha));
         for (const c of commits) if (!known.has(c.sha)) t.commits.push({ ...c, time: now() });
         s.robots[t.dev].commits += commits.length;
         if (commits.length) {
+          await publishPr(t, t.dev, 'Trabalho salvo depois de o motor reiniciar.', false);
           t.column = 'security';
           state.step(t, t.dev, `Retomou depois do reinício: salvou o trabalho em ${t.branch} (${commits.length} commit) e mandou para a revisão de segurança`);
         } else {

@@ -4,7 +4,8 @@ import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ROBOTS } from '../src/data/robots.js';
 
-const FILE = fileURLToPath(new URL('./state.json', import.meta.url));
+// MOTOR_STATE troca o arquivo (testes e ensaios sem mexer no estado do motor de verdade)
+const FILE = process.env.MOTOR_STATE || fileURLToPath(new URL('./state.json', import.meta.url));
 const dayKey = () => new Date().toISOString().slice(0, 10);
 const keep = (list, max) => { if (list.length > max) list.splice(0, list.length - max); };
 const now = () => new Date().toISOString();

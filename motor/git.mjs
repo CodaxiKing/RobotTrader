@@ -89,6 +89,27 @@ export function createGit({ dryRun, log }) {
       await git(dir, 'commit', '-m', `docs(changelog): ${line}`);
       await git(dir, 'push', 'origin', `HEAD:${base}`);
     },
+    // ── pull requests (gh, no diretório do repositório) ──
+    // abre o PR da branch para a base, ou devolve o que já está aberto (a correção entra no mesmo PR)
+    async openPr(repo, { head, base, title, body }) {
+      if (dryRun) { log(`(dry-run) gh pr create --head ${head} --base ${base} --title "${title}"`); return { number: 0, url: null }; }
+      const gh = (...args) => run('gh', args, { cwd: repo.path });
+      try {
+        const open = JSON.parse(await gh('pr', 'view', head, '--json', 'number,url,state'));
+        if (open.state === 'OPEN') return { number: open.number, url: open.url };
+      } catch { /* ainda não há PR para a branch */ }
+      const url = await gh('pr', 'create', '--head', head, '--base', base, '--title', title, '--body', body.slice(0, 20000));
+      return { number: Number(url.match(/\/pull\/(\d+)/)?.[1]), url: url.trim() };
+    },
+    async commentPr(repo, pr, body) {
+      if (!pr?.number) return;
+      await run('gh', ['pr', 'comment', String(pr.number), '--body', body.slice(0, 20000)], { cwd: repo.path });
+    },
+    // merge pelo GitHub (merge commit); falha se houver conflito ou regra de proteção da base
+    async mergePr(repo, pr, subject) {
+      if (dryRun) { log(`(dry-run) gh pr merge ${pr?.number} --merge`); return; }
+      await run('gh', ['pr', 'merge', String(pr.number), '--merge', '--subject', subject], { cwd: repo.path });
+    },
     async removeWorktree(repo, dir) {
       await git(repo.path, 'worktree', 'remove', '--force', dir).catch(() => {});
     },

@@ -500,3 +500,5 @@ body.light .acc-form input { background: #fff; color: var(--text); }
 .acc-code label { flex: 1; display: grid; gap: 5px; font-size: 12.5px; color: var(--muted); }
 .acc-code input { font: inherit; font-size: 14px; padding: 9px 12px; border-radius: 9px; border: 1px solid rgba(56, 189, 248, 0.5); background: rgba(0, 0, 0, 0.3); color: var(--text); }
 .acc-code button { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 9px; cursor: pointer; border: 1px solid #38bdf8; background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+a.pr-link { color: #38bdf8; font-weight: 700; text-decoration: none; }
+a.pr-link:hover { text-decoration: underline; }

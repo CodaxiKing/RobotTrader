@@ -344,6 +344,8 @@ let accountInfo = null;
 const { PANELS, taskHtml, pieceHtml } = createPanels({ feed, root: () => ovBody, account: () => accountInfo, live: LIVE });
 
 ovBody.addEventListener('click', async (e) => {
+  // link (PR, canvas) abre no GitHub sem disparar o clique do card
+  if (e.target.closest('a[href]')) return;
   const open = e.target.closest('[data-open]');
   if (open) return openPanel(open.dataset.open, { toggle: false });
   if (e.target.closest('[data-acc-login]')) {

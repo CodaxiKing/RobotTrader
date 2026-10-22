@@ -10,6 +10,8 @@ import { esc, who, fmtN } from './html.js';
 // root(): o elemento do overlay, para o histórico ler a busca que o dono digitou
 // account(): a conta Claude que o motor está usando (GET /api/account), ou null; live: se há motor
 export function createPanels({ feed, root, account = () => null, live = false }) {
+  // link do pull request no GitHub (o motor abre um por task)
+  const prLink = (pr) => (pr?.url ? ` · <a class="pr-link" href="${esc(pr.url)}" target="_blank" rel="noopener">PR #${esc(pr.number)}</a>` : '');
   const ORIGIN = {
     security: (t) => `🛡 achado da auditoria de ${who(t.from)}`,
     ops: (t) => `⚠ erro em produção visto por ${who(t.from)}`,
@@ -99,7 +101,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
             <div class="tc-top"><b>${c.id === 'todo' ? `<i class="prio">${i + 1}</i>` : ''}${esc(t.id)}</b><span class="area">${AREA[t.area].label}</span></div>
             <div class="tc-title">${esc(t.title)}</div>
             ${open.map((f) => `<div class="finding" style="--s:${SEVERITY[f.severity]}"><b>${esc(f.severity)}</b> ${esc(f.title)}<small>${esc(f.fix)}</small></div>`).join('')}
-            <div class="tc-meta">${t.dev ? `dev ${who(t.dev)}` : ORIGIN[t.origin]?.(t) || 'aguardando o P.O'}${t.secBy ? ` · revisão ${who(t.secBy)}` : ''}${t.qa ? ` · QA ${who(t.qa)}` : ''}${t.commits?.length ? ` · ${t.commits.length} commits` : ''}${t.rework ? ` · ${t.rework}× correção` : ''}${t.findings?.length && !open.length ? ` · 🛡 ${t.findings.length} corrigida(s)` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${t.cost ? ` · ${usd(t.cost)}` : ''}</div>
+            <div class="tc-meta">${t.dev ? `dev ${who(t.dev)}` : ORIGIN[t.origin]?.(t) || 'aguardando o P.O'}${t.secBy ? ` · revisão ${who(t.secBy)}` : ''}${t.qa ? ` · QA ${who(t.qa)}` : ''}${t.commits?.length ? ` · ${t.commits.length} commits` : ''}${t.rework ? ` · ${t.rework}× correção` : ''}${t.findings?.length && !open.length ? ` · 🛡 ${t.findings.length} corrigida(s)` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${t.cost ? ` · ${usd(t.cost)}` : ''}${prLink(t.pr)}</div>
           </article>`;
         }).join('') || '<p class="empty">vazio</p>'}</section>`;
       }).join('')}</div>`,
@@ -113,7 +115,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
           <div class="kv-row">
             <span>Área <b>${AREA[r.area].label}</b></span><span>Dev ${who(r.dev)}</span><span>QA ${who(r.qa)}</span>
             <span>Branch <code>${esc(r.branch)}</code></span><span>Commits <b>${r.commits}</b></span>
-            <span>Testes <b>${r.tests.passed}/${r.tests.total}</b></span><span>Correções <b>${r.rework}</b></span>
+            <span>Testes <b>${r.tests.passed}/${r.tests.total}</b></span><span>Correções <b>${r.rework}</b></span>${r.pr?.url ? `<span><a class="pr-link" href="${esc(r.pr.url)}" target="_blank" rel="noopener">PR #${esc(r.pr.number)} no GitHub</a></span>` : ''}
             <span>Segurança ${r.security?.reviewer ? who(r.security.reviewer) : '—'} <b>${r.security?.findings.length ? `${r.security.findings.length} falha(s) corrigida(s)` : 'sem falhas'}</b></span>
             ${r.cost ? `<span>Custo <b>${usd(r.cost)}</b></span>` : ''}
           </div>
@@ -287,7 +289,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
     return `
       <div class="task-head" style="--a:${AREA[t.area].color}">
         <b>${esc(t.id)} · ${esc(t.title)}</b>
-        <small>${AREA[t.area].label} · ${esc(COLUMNS.find((c) => c.id === t.column)?.label || t.column)} · <code>${esc(t.branch)}</code>${t.cost ? ` · ${usd(t.cost)}` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}</small>
+        <small>${AREA[t.area].label} · ${esc(COLUMNS.find((c) => c.id === t.column)?.label || t.column)} · <code>${esc(t.branch)}</code>${t.cost ? ` · ${usd(t.cost)}` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${prLink(t.pr)}</small>
       </div>
       <ol class="timeline">${(t.timeline || []).map((e) => `<li><time>${fmtTime(new Date(e.ts))}</time><b>${e.robotId === 'VOCÊ' ? 'VOCÊ' : who(e.robotId)}</b> ${esc(e.text)}</li>`).join('')}</ol>
       ${t.commits?.length ? `<div class="ov-floor">Commits</div><ul class="changes one">${t.commits.map((c) => `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.message)}</li>`).join('')}</ul>` : ''}`;
