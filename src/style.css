@@ -483,6 +483,16 @@ body.light .seg button.on, body.light #viewbtns button.on { color: var(--text); 
 .creative .cr-phone { align-self: center; width: 36%; aspect-ratio: 9 / 16; max-height: 52%; border: 1.6cqw solid #111; border-radius: 6cqw; background: #fff; padding: 4cqw 3cqw; display: flex; flex-direction: column; gap: 2.4cqw; }
 .creative .cr-phone i { display: block; height: 4cqw; border-radius: 2cqw; background: var(--fam-bg); }
 .creative .cr-phone i:first-child { height: 12cqw; background: #a9dcf6; }
+/* foto: imagem do banco de imagens no fundo, escurecida embaixo para o título ler bem */
+.creative.tpl-foto { background: #111 !important; color: #fff !important; justify-content: flex-end; padding-bottom: 16%; }
+.creative .cr-photo { position: absolute; inset: 0; background: center / cover no-repeat; }
+.creative .cr-photo::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 30%, rgba(0, 0, 0, 0.15) 50%, rgba(0, 0, 0, 0.8) 100%); }
+.tpl-foto .cr-title { text-shadow: 0 0.4cqw 2cqw rgba(0, 0, 0, 0.4); }
+.tpl-foto .cr-cta { background: #9ad6f8; color: #111; }
+.tpl-foto .cr-logo { z-index: 1; }
+.tpl-onda .cr-head.has-photo { background: center / cover no-repeat; }
+.photo-credit { margin: 6px 0 0; font-size: 11px; opacity: 0.7; }
+.photo-credit a { color: inherit; }
 .creative.draft { background: linear-gradient(155deg, #2a2e42, #1b1e2c); color: #e6e8f5; }
 /* o criativo mede a própria largura (cqw): ele precisa caber na coluna, e não o contrário */
 .creative { width: 100%; box-sizing: border-box; }

@@ -104,7 +104,17 @@ de pet (não para dev), no máximo 4 linhas, começando pelo que é novo. Respon
     deny: ['Edit', 'Write', 'Bash'],
     maxTurns: 30,
     prompt: `Você analisa o código do PetLive procurando UMA melhoria concreta, com evidência no código, dentro do foco pedido.
-Nada genérico. Responda SOMENTE com JSON: {"title": string curto, "detail": string com o porquê e onde (arquivo), "area": "web"|"app"}.`,
+Nada genérico. Não repita nada da lista do que já foi sugerido ou está no board, nem com outras palavras, e confira no
+código que a melhoria ainda não foi feita. Responda SOMENTE com JSON: {"title": string curto, "detail": string com o porquê
+e onde (arquivo), "area": "web"|"app"}; se não achar nada novo que valha a pena, responda {"none": true}.`,
+  },
+  screenCheck: {
+    tools: ['Read', 'Glob', 'Grep'],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 15,
+    prompt: `Você confere se uma tela do canvas de design do PetLive já existe no código: procure a rota, a tela ou o
+componente pelo nome e pelo assunto (em português e em inglês). Só conta como implementada se a tela existe e funciona,
+não um esboço vazio. Responda SOMENTE com JSON: {"implemented": boolean, "evidence": string com o arquivo, ou ""}.`,
   },
   script: {
     tools: [],
@@ -119,7 +129,8 @@ Responda SOMENTE com JSON: {"script": [{"t": "0-3s", "scene": string, "line": st
     deny: ['Edit', 'Write', 'Bash'],
     maxTurns: 2,
     prompt: `Você é copywriter das redes do PetLive, app para tutores de pets. Tom próximo e claro, sem exagero.
-Responda SOMENTE com JSON: {"hook": string, "caption": string (gancho, 2-3 frases e o CTA), "hashtags": [string, até 5]}.`,
+Responda SOMENTE com JSON: {"hook": string, "caption": string (gancho, 2-3 frases e o CTA), "hashtags": [string, até 5],
+"photo": string (busca em inglês para um banco de imagens: o pet e a cena da foto de fundo, 2 a 5 palavras, sem texto nem logo)}.`,
   },
   critic: {
     tools: [],
@@ -157,6 +168,8 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = ()
     const cfg = ROLES[role];
     const chosen = ai(slot);
     if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role); }
+    const chosen = ai();
+    if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role, prompt); }
     if (chosen.provider === 'opencode') return opencode.run(role, { prompt, cwd, model: chosen.model, signal });
     const controller = new AbortController();
     signal?.addEventListener('abort', () => controller.abort());
@@ -207,8 +220,19 @@ ${PT_BR}` },
     return { text: ok ? result.result : '', cost: result.total_cost_usd || 0, ok, turns: result.num_turns, subtype: result.subtype };
   }
 
-  // ensaio: respostas plausíveis, sem chamar a API
-  async function dryRunAnswer(role) {
+  // ensaio: respostas plausíveis, sem chamar a API; o texto do post sai da pauta, para cada peça ter o seu
+  const DRY_IDEAS = [
+    ['Cache da lista de pets', 'A tela de pets refaz a busca a cada navegação.', 'app'],
+    ['Esqueleto de carregamento no Início', 'O Início fica em branco até a API responder.', 'app'],
+    ['Mensagem de erro amigável no login', 'O login mostra o erro cru da API.', 'web'],
+    ['Rótulos de leitor de tela nos atalhos', 'Os ícones de Todos os atalhos não têm accessibilityLabel.', 'app'],
+    ['Imagens do pet em WebP', 'As fotos dos pets vão em PNG cheio.', 'web'],
+  ].map(([title, detail, area]) => ({ title: `${title} (ensaio)`, detail: `${detail} (ensaio)`, area }));
+  function dryCopy(prompt) {
+    const [, hook = 'Novidade no PetLive', body = '', cta = 'Baixe o PetLive.'] = prompt.match(/Gancho: (.+)\nTexto: (.*)\nCTA: (.+)/) || [];
+    return { hook, body, cta, caption: `${hook}\n\n${body}\n\n👉 ${cta}`, hashtags: ['#petlive', '#pets', '#tutordepet'] };
+  }
+  async function dryRunAnswer(role, prompt = '') {
     await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
     const cost = 0.01 + Math.random() * 0.03;
     const answers = {
@@ -222,9 +246,11 @@ ${PT_BR}` },
         : { ok: true, total: 30, passed: 30, failed: 0, summary: 'Todos os testes passaram (ensaio).', problems: [] }),
       chat: 'Estou em modo de ensaio: o motor não está chamando a API agora.',
       docs: 'Novidades: lembretes de vacina e cadastro do pet mais rápido. Correções de estabilidade.',
-      idea: JSON.stringify({ title: 'Cache da lista de pets (ensaio)', detail: 'A tela de pets refaz a busca a cada navegação (ensaio).', area: 'app' }),
-      script: JSON.stringify({ script: [{ t: '0-3s', scene: 'Close no pet', line: 'Seu pet está com as vacinas em dia?' }, { t: '3-15s', scene: 'Print do app', line: 'A carteirinha avisa antes de vencer.' }, { t: '15-25s', scene: 'Logo PetLive', line: 'Baixe o PetLive.' }] }),
-      copy: JSON.stringify({ hook: 'Seu pet está com as vacinas em dia?', caption: 'Seu pet está com as vacinas em dia?\n\nA carteirinha digital avisa antes de cada dose vencer.\n\n👉 Baixe o PetLive.', hashtags: ['#petlive', '#pets', '#vacinas'] }),
+      // a próxima ideia de exemplo que ainda não está na lista do que já foi sugerido; acabou a lista, nada novo
+      idea: JSON.stringify(DRY_IDEAS.find((i) => !prompt.includes(i.title)) || { none: true }),
+      screenCheck: JSON.stringify(Math.random() < 0.3 ? { implemented: true, evidence: 'app/(tabs)/tela.tsx (ensaio)' } : { implemented: false, evidence: '' }),
+      script: JSON.stringify((({ hook, body, cta }) => ({ script: [{ t: '0-3s', scene: 'Close no pet', line: hook }, { t: '3-15s', scene: 'Print do app', line: body.split('. ')[0] }, { t: '15-25s', scene: 'Logo PetLive', line: cta }] }))(dryCopy(prompt))),
+      copy: JSON.stringify(dryCopy(prompt)),
       critic: JSON.stringify({ scores: { gancho: 8, clareza: 8, marca: 7, cta: 8, formato: 8 }, feedback: 'Aumentar o logo no fim (ensaio).' }),
     };
     return { text: answers[role], cost, ok: true, turns: 1, subtype: 'success' };
