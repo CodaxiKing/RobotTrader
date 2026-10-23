@@ -32,8 +32,10 @@ export function createPanels({ feed, root, account = () => null, live = false })
     const title = `<b class="cr-title">${esc(v.headline)}</b>`;
     const cta = `<span class="cr-cta">${esc(v.cta.replace(/\.$/, ''))}</span>`;
     const logo = '<span class="cr-logo">PetLive</span>';
+    const photo = /^https:\/\//.test(v.photo?.src || '') ? ` style="background-image:url(&quot;${esc(v.photo.src)}&quot;)" role="img" aria-label="${esc(v.photo.alt)}"` : '';
     const body = {
-      onda: `<div class="cr-head">${dog}</div>${title}${cta}${logo}`,
+      onda: `<div class="cr-head${photo ? ' has-photo' : ''}"${photo}>${photo ? '' : dog}</div>${title}${cta}${logo}`,
+      foto: `<span class="cr-photo"${photo}></span>${title}${cta}${logo}`,
       cartao: `${title}<ul class="cr-points">${v.points.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${logo}`,
       pergunta: `<span class="cr-tag">PetLive explica</span>${title}${cta}${logo}`,
       app: `${title}<span class="cr-phone"><i></i><i></i><i></i></span>${logo}`,
@@ -48,6 +50,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
     return `
       <div class="piece">
         <div class="piece-preview">${creative(p, 'big')}
+          ${p.visual?.photo ? `<p class="photo-credit">Foto: <a href="${esc(p.visual.photo.authorUrl)}" target="_blank" rel="noopener">${esc(p.visual.photo.author)}</a> no <a href="${esc(p.visual.photo.page)}" target="_blank" rel="noopener">Pexels</a> · busca "${esc(p.visual.photo.query)}"</p>` : ''}
           ${p.score != null ? `<div class="scores">${Object.entries(p.scores).map(([k, v]) => `<span class="${v >= 7.5 ? 'ok' : 'low'}">${esc(k)} <b>${v.toFixed(1)}</b></span>`).join('')}<span class="total">nota <b>${p.score.toFixed(1)}</b></span></div>` : ''}
           ${idea && feed.canDecide ? `<div class="decide"><button data-approve="${esc(idea.id)}">✔ Aprovar e agendar</button><button data-adjust="${esc(idea.id)}" class="mid">✎ Pedir ajuste</button><button data-reject="${esc(idea.id)}" class="no">Recusar</button></div>` : ''}
         </div>

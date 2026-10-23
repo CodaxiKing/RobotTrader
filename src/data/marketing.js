@@ -9,7 +9,7 @@
 // esperam o dono.
 //
 // Peça: { id, network, format, video, theme, angle, hook, caption, hashtags, script: [{ t, scene, line }],
-//         visual: { palette, layout, headline }, stage, score, scores, feedback, fixBy, scheduledAt,
+//         visual: { palette, layout, headline, photo }, stage, score, scores, feedback, fixBy, scheduledAt,
 //         publishedAt, metrics: { reach, likes, comments, saves, clicks }, timeline, ideaId }
 // ─────────────────────────────────────────────────────────────
 
@@ -37,13 +37,13 @@ export const STAGES = [
 
 // conteúdo de valor para tutores; os lançamentos do app entram por cima destes
 export const THEMES = [
-  { topic: 'vacinas', hook: 'Seu pet está com as vacinas em dia?', angle: 'educativo', body: 'A carteirinha digital do PetLive avisa antes de cada dose vencer. Sem papel perdido, sem susto no veterinário.', cta: 'Baixe o PetLive e cadastre a carteirinha em 2 minutos.' },
-  { topic: 'fogos', hook: '3 jeitos de acalmar o seu pet nos fogos', angle: 'dica', body: 'Cantinho escuro, som ambiente e nada de bronca. O PetLive tem um modo fogos e trovão com o passo a passo.', cta: 'Salve este post para a virada do ano.' },
-  { topic: 'pet perdido', hook: 'O QR na coleira que trouxe o Thor de volta', angle: 'história', body: 'Quem achou o Thor escaneou a coleira e falou com a tutora na hora. A ficha do pet aparece no celular de quem encontra.', cta: 'Ative o QR da coleira no app.' },
-  { topic: 'passeio', hook: 'Quanto o seu cachorro andou hoje?', angle: 'produto', body: 'O passeio com GPS mostra o trajeto, o tempo e a distância, e guarda o histórico de cada pet.', cta: 'Comece um passeio pelo app hoje.' },
-  { topic: 'primeiros socorros', hook: 'Seu pet comeu chocolate. E agora?', angle: 'educativo', body: 'Saiba o que fazer nos primeiros minutos e encontre a clínica 24 h mais perto, direto no PetLive.', cta: 'Compartilhe com quem tem pet.' },
-  { topic: 'pet sênior', hook: '5 sinais de que o seu pet está envelhecendo', angle: 'educativo', body: 'Mais sono, menos apetite e cuidado com as articulações. O PetLive acompanha a qualidade de vida do pet sênior.', cta: 'Conta aqui embaixo: quantos anos tem o seu?' },
-  { topic: 'lojistas', hook: 'Sua agenda de banho e tosa no celular', angle: 'B2B', body: 'Lojistas no PetLive recebem pedidos, confirmam horários e acompanham a agenda sem planilha.', cta: 'Cadastre a sua loja.', network: 'linkedin' },
+  { topic: 'vacinas', photo: 'dog at veterinarian', hook: 'Seu pet está com as vacinas em dia?', angle: 'educativo', body: 'A carteirinha digital do PetLive avisa antes de cada dose vencer. Sem papel perdido, sem susto no veterinário.', cta: 'Baixe o PetLive e cadastre a carteirinha em 2 minutos.' },
+  { topic: 'fogos', photo: 'scared dog hiding', hook: '3 jeitos de acalmar o seu pet nos fogos', angle: 'dica', body: 'Cantinho escuro, som ambiente e nada de bronca. O PetLive tem um modo fogos e trovão com o passo a passo.', cta: 'Salve este post para a virada do ano.' },
+  { topic: 'pet perdido', photo: 'dog with collar tag', hook: 'O QR na coleira que trouxe o Thor de volta', angle: 'história', body: 'Quem achou o Thor escaneou a coleira e falou com a tutora na hora. A ficha do pet aparece no celular de quem encontra.', cta: 'Ative o QR da coleira no app.' },
+  { topic: 'passeio', photo: 'dog walking leash park', hook: 'Quanto o seu cachorro andou hoje?', angle: 'produto', body: 'O passeio com GPS mostra o trajeto, o tempo e a distância, e guarda o histórico de cada pet.', cta: 'Comece um passeio pelo app hoje.' },
+  { topic: 'primeiros socorros', photo: 'veterinarian examining dog', hook: 'Seu pet comeu chocolate. E agora?', angle: 'educativo', body: 'Saiba o que fazer nos primeiros minutos e encontre a clínica 24 h mais perto, direto no PetLive.', cta: 'Compartilhe com quem tem pet.' },
+  { topic: 'pet sênior', photo: 'senior dog resting', hook: '5 sinais de que o seu pet está envelhecendo', angle: 'educativo', body: 'Mais sono, menos apetite e cuidado com as articulações. O PetLive acompanha a qualidade de vida do pet sênior.', cta: 'Conta aqui embaixo: quantos anos tem o seu?' },
+  { topic: 'lojistas', photo: 'dog grooming salon', hook: 'Sua agenda de banho e tosa no celular', angle: 'B2B', body: 'Lojistas no PetLive recebem pedidos, confirmam horários e acompanham a agenda sem planilha.', cta: 'Cadastre a sua loja.', network: 'linkedin' },
 ];
 // Identidade visual do PetLive (artboard "Paleta de cores" do canvas): preto e azul céu carregam a
 // marca; o resto é pastel, sempre com o texto escuro da mesma família. Fonte: Plus Jakarta Sans.
@@ -63,6 +63,7 @@ export const TEMPLATES = {
   cartao: 'Cartão pastel com título e três pontos',
   pergunta: 'Fundo preto, pergunta grande e destaque azul céu',
   app: 'Print do app no celular com título',
+  foto: 'Foto do banco de imagens em tela cheia, título e botão',
 };
 // cor por tom da pauta: emergência em rosa, premium em lilás, rotina em amarelo, sucesso em verde
 const FAMILY_BY_ANGLE = { educativo: 'azul', dica: 'amarelo', história: 'verde', produto: 'azul', lançamento: 'lilas', B2B: 'azul' };
@@ -85,12 +86,25 @@ const PROMOTIONS = [
   ['Calendário de datas pet', 'Dia do Cachorro (26/08), Dia dos Animais (04/10), vacinação antirrábica: posts preparados com antecedência.'],
 ];
 
-// arte da peça no template da marca: o mesmo para a simulação e para o motor
-export function brandVisual(p, pick) {
-  const template = p.video ? pick(['pergunta', 'app', 'onda']) : p.format === 'Carrossel' ? pick(['cartao', 'onda']) : pick(Object.keys(TEMPLATES));
+// próxima pauta de conteúdo: nunca uma que você recusou, e a menos usada primeiro (só repete depois de passar
+// por todas); null quando você recusou todas. O mesmo para a simulação e para o motor
+export function nextTheme(pieces, pick) {
+  const refused = new Set(pieces.filter((p) => p.stage === 'recusado').map((p) => p.theme));
+  const options = THEMES.filter((t) => !refused.has(t.topic));
+  if (!options.length) return null;
+  const uses = (t) => pieces.filter((p) => p.theme === t.topic).length;
+  const least = Math.min(...options.map(uses));
+  return pick(options.filter((t) => uses(t) === least));
+}
+
+// arte da peça no template da marca: o mesmo para a simulação e para o motor. Com uma foto do banco de
+// imagens (só no motor, motor/stock.mjs), ela vai de fundo inteiro ("foto") ou no cabeçalho da onda
+export function brandVisual(p, pick, photo = null) {
+  const template = photo ? pick(['foto', 'foto', 'onda'])
+    : p.video ? pick(['pergunta', 'app', 'onda']) : p.format === 'Carrossel' ? pick(['cartao', 'onda']) : pick(['onda', 'cartao', 'pergunta', 'app']);
   const family = /socorro|chocolate|perdid|emerg/i.test(p.theme) ? 'rosa' : FAMILY_BY_ANGLE[p.angle] || pick(Object.keys(BRAND.families));
   const points = p.brief.body.replace(/\.$/, '').split(/\. |, /).slice(0, 3);
-  return { template, family, layout: TEMPLATES[template], headline: p.hook, points, cta: p.brief.cta };
+  return { template, family, layout: TEMPLATES[template], headline: p.hook, points, cta: p.brief.cta, photo };
 }
 
 export function createMarketing({ push, alert, addIdea, pick, rand, keep, canvas, board }) {
@@ -112,7 +126,8 @@ export function createMarketing({ push, alert, addIdea, pick, rand, keep, canvas
     if (launch) {
       promoted.add(launch.id);
       theme = { topic: launch.title, hook: `Novo no PetLive: ${launch.title}`, angle: 'lançamento', body: `Acabou de chegar no app: ${launch.title.toLowerCase()}. Mais um passo para cuidar do seu pet num lugar só.`, cta: 'Atualize o app e experimente.', launch: launch.id };
-    } else theme = pick(THEMES);
+    } else theme = nextTheme(pieces, pick);
+    if (!theme) return;
     const networkId = theme.network || pick(['instagram', 'instagram', 'tiktok', 'youtube', 'facebook']);
     const format = pick(NETWORKS[networkId].formats);
     const p = {

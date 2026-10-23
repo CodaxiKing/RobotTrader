@@ -39,7 +39,8 @@ Os painéis das paredes também são clicáveis. 🔔 liga os avisos do navegado
 O mapa no canto mostra o salão de cima, com um ponto por robô; clicar numa zona leva a câmera até ela. ☀ alterna o tema claro.
 
 Os criativos da agência saem nos templates da marca PetLive (cores, famílias pastel e a fonte Plus Jakarta Sans do artboard
-"Paleta de cores" do canvas): cabeçalho com onda, cartão pastel, pergunta em fundo preto e print do app.
+"Paleta de cores" do canvas): cabeçalho com onda, cartão pastel, pergunta em fundo preto e print do app. No motor, com
+uma chave do [Pexels](https://www.pexels.com/api/), entra também a foto do banco de imagens (abaixo).
 
 ## Rodar
 
@@ -114,10 +115,15 @@ minutos viram segundos):
 | `DOCS_01` | Uma linha no `CHANGELOG.md` de `develop` a cada merge; um agente escreve as notas de cada release para as lojas. |
 | `CANVAS_01` | Telas planejadas do canvas (até `canvas.maxPhase`) sem task viram sugestão; aprovada, vira item do Project. Sem custo de agente. |
 | Melhorias | Um robô por vez (`ideas.everyMinutes`) lê o código, só leitura, e sugere uma melhoria com evidência; vai para a sua aprovação. |
-| Agência | Pauta → roteiro e legenda (agentes) → arte no template da marca → avaliação (agente) → sua aprovação → **pronto para postar**. |
+| Agência | Pauta → roteiro e legenda (agentes) → arte no template da marca, com foto do banco de imagens → avaliação (agente) → sua aprovação → **pronto para postar**. |
 
-**Ainda sem ligação:** publicar sozinho nas redes (precisa da API da Meta), arte e vídeo gerados (a arte usa os templates
-da marca), métricas dos posts, erros de produção do Sentry e o `DATA_01` (precisa de uma fonte de analytics); no motor
+**Fotos dos criativos:** o `COPY_01` escreve, junto com a legenda, a busca da foto de acordo com a pauta (em inglês, por
+exemplo `dog at veterinarian`), e o `ARTE_01` / `VIDEO_01` pega no [Pexels](https://www.pexels.com/api/) uma foto que
+ainda não foi usada (quadrada no post, em pé na capa do vídeo) e monta o criativo com ela no fundo ou no cabeçalho. A
+chave é grátis: ponha `PEXELS_API_KEY=...` em `motor/.env` (fora do git) e reinicie o motor; funciona também no ensaio.
+Sem chave, a arte sai só no template, como antes. O painel da peça mostra o crédito do fotógrafo.
+
+**Ainda sem ligação:** publicar sozinho nas redes (precisa da API da Meta), imagem e vídeo gerados por IA, métricas dos posts, erros de produção do Sentry e o `DATA_01` (precisa de uma fonte de analytics); no motor
 esses ficam parados e o escritório avisa.
 
 ## Canvas

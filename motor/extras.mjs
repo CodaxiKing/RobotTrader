@@ -1,17 +1,23 @@
 // Os robôs do motor além do fluxo principal. Cada um roda de tempos em tempos (config.extras) para
 // não gastar à toa, e tudo o que vira trabalho novo espera a aprovação do dono.
 //   DOCS_01    uma linha no CHANGELOG.md a cada merge; as notas de cada release (agente)
-//   CANVAS_01  telas planejadas do canvas (snapshot) sem task viram sugestão; sem custo de agente
-//   melhorias  CODE/PERF/DESIGN/UX/A11Y, um por vez: lê o código só para leitura e sugere uma melhoria
-//   agência    pauta → roteiro (agente) → texto (agente) → arte no template da marca → avaliação (agente)
+//   CANVAS_01  telas planejadas do canvas (snapshot) sem task viram sugestão, depois de um agente conferir no
+//              código que a tela ainda não existe (se existe, vira "entregue" sem perguntar nada)
+//   melhorias  CODE/PERF/DESIGN/UX/A11Y, um por vez: lê o código só para leitura e sugere uma melhoria que
+//              ainda não foi sugerida nem está no board
+//   agência    pauta → roteiro (agente) → texto (agente) → arte no template da marca, com foto do Pexels
+//              (stock.mjs) quando há PEXELS_API_KEY → avaliação (agente)
 //              → aprovação → "pronto para postar". Publicar sozinho precisa da API da Meta, que não está ligada.
 //   DATA_01    sem fonte de analytics ligada: fica parado e diz isso
 import { ROBOTS } from '../src/data/robots.js';
-import { NETWORKS, VIDEO, THEMES, brandVisual } from '../src/data/marketing.js';
+import { NETWORKS, VIDEO, nextTheme, brandVisual } from '../src/data/marketing.js';
 import { parseJson } from './agents.mjs';
+import { createStock } from './stock.mjs';
 
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 const now = () => new Date().toISOString();
+// título para comparar sugestões: sem acento, caixa, pontuação nem a marca do ensaio
+const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\(ensaio\)/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
 
 export function createExtras({ config, state, agent, work, git, repoOf }) {
@@ -24,6 +30,7 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
   const pending = (filter) => s.ideas.filter((i) => i.status === 'aguardando' && filter(i));
   s.marketing ||= { pieces: [], promotions: [] };
   const pieces = s.marketing.pieces;
+  const stock = createStock({ key: process.env.PEXELS_API_KEY, warn: (text) => state.alert('warn', text, { robotId: 'ARTE_01', panel: 'marketing' }) });
 
   function addIdea(robotId, idea) {
     const id = state.newIdeaId();
@@ -61,8 +68,21 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
       const asked = new Set(s.ideas.map((i) => i.screen).filter(Boolean));
       const next = s.canvas.screens.find((sc) => sc.phase <= (c.maxPhase || 1) && sc.status === 'planejada' && !sc.taskId && !asked.has(sc.file));
       if (!next) return state.push('CANVAS_01', 'Canvas conferido · todas as telas da fase já têm task');
+      const area = next.kind === 'app' ? 'app' : 'web';
+      // a tela pode já ter sido feita fora do board: confere no código antes de sugerir
+      let check = {};
+      try {
+        check = parseJson(await agent('CANVAS_01', 'screenCheck', null, { prompt: `Tela "${next.name}" (${next.section}, arquivo do canvas ${next.file}). Ela já está implementada neste repositório (${area})?`, cwd: config.repos[area].path }));
+      } catch { /* sem resposta: sugere, e você decide */ }
+      if (check.implemented) {
+        Object.assign(next, { status: 'entregue', outdated: false });
+        s.canvas.changes.push({ time: now(), text: `"${next.name}" já estava no código${check.evidence ? ` (${check.evidence})` : ''}: marcou como entregue` });
+        state.push('CANVAS_01', `"${next.name}" já existe no código · marcou como entregue, sem sugerir`);
+        last.canvas = 0; // confere a próxima tela na volta seguinte
+        return;
+      }
       s.canvas.changes.push({ time: now(), text: `"${next.name}" está no canvas e ainda não tem task` });
-      addIdea('CANVAS_01', { focus: 'canvas', title: `Implementar "${next.name}"`, detail: `${next.section} · ${next.phaseName}. Está no canvas e ainda não tem task no board.`, screen: next.file, area: next.kind === 'app' ? 'app' : 'web' });
+      addIdea('CANVAS_01', { focus: 'canvas', title: `Implementar "${next.name}"`, detail: `${next.section} · ${next.phaseName}. Está no canvas, não tem task no board e não achei no código.`, screen: next.file, area });
     });
   }
 
@@ -84,8 +104,17 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
     const r = team[ideaTurn++ % team.length];
     const area = ideaTurn % 2 ? 'web' : 'app';
     work(r.id, null, 'Analisando o código', async () => {
-      const text = await agent(r.id, 'idea', null, { prompt: `Foco: ${FOCUS_PROMPT[r.focus] || FOCUS_PROMPT.dev}${r.id === 'PERF_01' ? ' (performance: renderizações, consultas, tamanho do bundle)' : ''}. Repositório: ${area}.`, cwd: config.repos[area].path });
+      // o que já foi sugerido (aprovado ou não) e o que está no board, para o agente não repetir
+      const known = [
+        ...s.ideas.filter((i) => !['post', 'divulgação', 'release'].includes(i.focus)).map((i) => `${i.title} (${i.status})`),
+        ...s.board.map((t) => `${t.title} (${t.column === 'merged' ? 'entregue' : 'no board'})`),
+      ].slice(-60);
+      const avoid = known.length ? `\nJá sugerido ou no board (não repita):\n${known.map((k) => `- ${k}`).join('\n')}` : '';
+      const text = await agent(r.id, 'idea', null, { prompt: `Foco: ${FOCUS_PROMPT[r.focus] || FOCUS_PROMPT.dev}${r.id === 'PERF_01' ? ' (performance: renderizações, consultas, tamanho do bundle)' : ''}. Repositório: ${area}.${avoid}`, cwd: config.repos[area].path });
       const idea = parseJson(text);
+      if (idea.none || !idea.title) return state.push(r.id, 'Leu o código e não achou nada novo para sugerir');
+      const seen = new Set([...s.ideas.map((i) => norm(i.title)), ...s.board.map((t) => norm(t.title))]);
+      if (seen.has(norm(idea.title))) return state.push(r.id, `Descartou "${idea.title}": já foi sugerido ou está no board`);
       addIdea(r.id, { focus: r.focus, title: idea.title, detail: idea.detail, area: idea.area === 'app' ? 'app' : area });
     });
   }
@@ -96,8 +125,9 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
     const promoted = new Set(pieces.map((p) => p.launch).filter(Boolean));
     const launch = s.board.find((t) => t.released && !promoted.has(t.id) && t.origin !== 'security' && t.origin !== 'ops');
     const theme = launch
-      ? { topic: launch.title, hook: `Novo no PetLive: ${launch.title}`, angle: 'lançamento', body: `Acabou de chegar no app: ${launch.title.toLowerCase()}.`, cta: 'Atualize o app e experimente.' }
-      : pick(THEMES);
+      ? { topic: launch.title, photo: 'happy dog owner using phone', hook: `Novo no PetLive: ${launch.title}`, angle: 'lançamento', body: `Acabou de chegar no app: ${launch.title.toLowerCase()}.`, cta: 'Atualize o app e experimente.' }
+      : nextTheme(pieces, pick);
+    if (!theme) return state.push('MKT_LEAD', 'Você recusou todas as pautas · sem pauta nova até ter um lançamento do app');
     const network = theme.network || pick(['instagram', 'instagram', 'tiktok', 'youtube', 'facebook']);
     const format = pick(NETWORKS[network].formats);
     const p = {
@@ -108,10 +138,10 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
     pieces.push(p);
     stepPiece(p, 'MKT_LEAD', `Pauta: ${NETWORKS[network].label} · ${format} · "${p.hook}"`);
   }
-  const brief = (p) => `Rede: ${NETWORKS[p.network].label}, formato: ${p.format}. Tema: ${p.brief.topic} (${p.angle}).\nIdeia: ${p.brief.hook} ${p.brief.body} CTA: ${p.brief.cta}`;
-  function pieceStep(stage, robotId, activity, fn) {
+  const brief = (p) => `Rede: ${NETWORKS[p.network].label}, formato: ${p.format}. Tema: ${p.brief.topic} (${p.angle}).\nGancho: ${p.brief.hook}\nTexto: ${p.brief.body}\nCTA: ${p.brief.cta}`;
+  function pieceStep(stage, robotId, activity, fn, accept = () => true) {
     if (busy(robotId)) return;
-    const p = pieces.find((x) => x.stage === stage && !x.busy && (stage !== 'ajuste' || x.fixBy));
+    const p = pieces.find((x) => x.stage === stage && !x.busy && (stage !== 'ajuste' || x.fixBy) && accept(x));
     if (!p) return;
     p.busy = robotId;
     work(robotId, null, `${activity} · ${p.id}`, async () => {
@@ -133,24 +163,26 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
     });
     const writeCopy = async (p, note = '') => {
       const out = parseJson(await agent('COPY_01', 'copy', null, { prompt: `${brief(p)}${p.script.length ? `\nRoteiro: ${p.script.map((x) => x.line).join(' / ')}` : ''}${note ? `\nAjuste pedido: ${note}` : ''}` }));
-      Object.assign(p, { hook: out.hook || p.hook, caption: out.caption || '', hashtags: out.hashtags || [] });
+      Object.assign(p, { hook: out.hook || p.hook, caption: out.caption || '', hashtags: out.hashtags || [], photoQuery: out.photo || p.photoQuery });
     };
     pieceStep('texto', 'COPY_01', 'Legenda', async (p) => {
       await writeCopy(p);
       p.stage = 'criação';
       stepPiece(p, 'COPY_01', 'Legenda e hashtags prontas');
     });
-    // a arte sai do template da marca (sem modelo de imagem ligado); o vídeo usa a mesma capa
+    // a arte sai do template da marca, com uma foto do banco de imagens quando o Pexels está ligado;
+    // o vídeo usa a mesma capa, em pé
     for (const [robotId, video] of [['ARTE_01', false], ['VIDEO_01', true]]) {
-      if (busy(robotId)) continue;
-      const p = pieces.find((x) => x.stage === 'criação' && !x.busy && x.video === video);
-      if (!p) continue;
-      p.visual = brandVisual(p, pick);
-      p.stage = 'avaliação';
-      stepPiece(p, robotId, `${video ? 'Capa do vídeo' : 'Criativo'} no template "${p.visual.layout}"`);
+      pieceStep('criação', robotId, video ? 'Capa do vídeo' : 'Criativo', async (p) => {
+        const used = new Set(pieces.map((x) => x.visual?.photo?.id).filter(Boolean));
+        const photo = await stock.photo(p.photoQuery || p.brief.photo, { portrait: video, skip: used });
+        p.visual = brandVisual(p, pick, photo);
+        p.stage = 'avaliação';
+        stepPiece(p, robotId, `${video ? 'Capa do vídeo' : 'Criativo'} no template "${p.visual.layout}"${photo ? ` · foto de ${photo.author} (Pexels)` : ''}`);
+      }, (x) => x.video === video);
     }
     pieceStep('avaliação', 'REVISOR_01', 'Avaliando', async (p) => {
-      const out = parseJson(await agent('REVISOR_01', 'critic', null, { prompt: `${brief(p)}\nLegenda: ${p.caption}\nRoteiro: ${p.script.map((x) => `${x.t} ${x.line}`).join(' / ')}\nArte: ${p.visual?.layout}` }));
+      const out = parseJson(await agent('REVISOR_01', 'critic', null, { prompt: `${brief(p)}\nLegenda: ${p.caption}\nRoteiro: ${p.script.map((x) => `${x.t} ${x.line}`).join(' / ')}\nArte: ${p.visual?.layout}${p.visual?.photo ? `, foto: ${p.visual.photo.alt}` : ''}` }));
       p.scores = out.scores;
       p.score = Math.round((Object.values(out.scores).reduce((n, v) => n + Number(v), 0) / 5) * 10) / 10;
       if (p.score >= 7.5 || p.rounds >= 2) {
@@ -166,7 +198,8 @@ export function createExtras({ config, state, agent, work, git, repoOf }) {
     pieceStep('ajuste', 'COPY_01', 'Ajustando', async (p) => {
       await writeCopy(p, p.feedback.at(-1));
       p.rounds++;
-      p.stage = 'avaliação';
+      // a arte é refeita com o texto novo (e uma foto nova, se o ajuste pediu outra imagem)
+      p.stage = 'criação';
       stepPiece(p, 'COPY_01', `Ajustou: ${p.feedback.at(-1)}`);
     });
   }
