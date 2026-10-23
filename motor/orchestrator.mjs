@@ -25,21 +25,27 @@ export function createOrchestrator(config) {
   const log = (text) => console.log(`  ${text}`);
   const git = createGit({ dryRun, log });
   const project = createProject({ run: git.run, ...config.project, dryRun });
-  // IA dos robôs: Claude (Agent SDK) ou OpenCode, com o modelo escolhido para cada um; troca pelo escritório
-  s.ai ||= { provider: config.ai?.provider || 'claude', models: { claude: config.model, opencode: config.ai?.opencodeModel || 'opencode/big-pickle' } };
-  const currentAi = () => ({ provider: s.ai.provider, model: s.ai.models[s.ai.provider] });
+  // IA dos robôs, por grupo: Desenvolvimento (todo o resto), Melhorias (sala 06) e Marketing (sala 07).
+  // Cada uma é Claude (Agent SDK) ou OpenCode com um modelo; Melhorias e Marketing em null seguem a de Desenvolvimento.
+  if (s.ai && !s.ai.slots) s.ai = { slots: { main: { provider: s.ai.provider, model: s.ai.models[s.ai.provider] }, ideas: null, marketing: null } };
+  s.ai ||= { slots: { main: { provider: config.ai?.provider || 'claude', model: config.model }, ideas: null, marketing: null } };
+  const SLOTS = ['main', 'ideas', 'marketing'];
+  const SLOT_LABEL = { main: 'Desenvolvimento', ideas: 'Melhorias', marketing: 'Marketing' };
+  const slotOf = (robotId) => ({ lab: 'ideas', mkt: 'marketing' })[robotById(robotId)?.floor] || 'main';
+  const aiFor = (slot = 'main') => s.ai.slots[slot] || s.ai.slots.main;
+  const aiLabel = (slot = 'main') => `${aiFor(slot).provider === 'claude' ? 'Claude' : 'OpenCode'} · ${aiFor(slot).model}`;
   // ritmo: 'one' = uma task por vez (e a pausa do piloto); 'all' = cada dev livre pega uma task da área dele
   s.mode ||= config.limits?.maxActive === 1 ? 'one' : 'all';
   const maxActive = () => (s.mode === 'one' ? 1 : config.limits?.maxParallel || Infinity);
-  const aiLabel = () => `${s.ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${currentAi().model}`;
-  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit, ai: currentAi });
+  const agents = createAgents({ model: config.model, budgets: config.budgets, dryRun, log, onRateLimit, ai: aiFor, usesClaude: () => SLOTS.some((sl) => aiFor(sl).provider === 'claude') });
   const repoOf = (task) => config.repos[task.area];
 
   // ── plano da conta Claude: % usado nas janelas de 5h e semanal, e a espera quando acaba ──
   // Quando o limite acaba no meio, a task fica estacionada com o mesmo robô e o motor retoma sozinho na renovação.
   s.plan ||= { available: false, name: null, session: null, weekly: null, waitUntil: null, checkedAt: null };
   const hhmm = (ms) => new Date(ms).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', ...(ms - Date.now() > 20 * 3600e3 ? { weekday: 'short' } : {}) });
-  const planWaiting = () => s.ai.provider === 'claude' && !!s.plan.waitUntil && Date.now() < s.plan.waitUntil;
+  // a espera do plano para o escritório quando o Desenvolvimento é Claude (o grosso do trabalho)
+  const planWaiting = () => aiFor('main').provider === 'claude' && !!s.plan.waitUntil && Date.now() < s.plan.waitUntil;
   let checkingPlan = null;
   function refreshPlan() {
     if (checkingPlan) return checkingPlan;
@@ -195,7 +201,7 @@ export function createOrchestrator(config) {
     }
   }
   async function agent(robotId, role, task, opts) {
-    const res = await agents.run(role, opts);
+    const res = await agents.run(role, { ...opts, slot: slotOf(robotId) });
     s.robots[robotId].done++;
     if (state.charge(robotId, res.cost, task) && !s.paused) {
       setPaused(true, `orçamento do dia (US$ ${s.budget}) atingido`);
@@ -560,23 +566,31 @@ export function createOrchestrator(config) {
     let opencode = [];
     let opencodeError = null;
     try { opencode = await agents.opencodeModels({ refresh }); } catch (err) { opencodeError = err.message; }
-    return { provider: s.ai.provider, model: currentAi().model, models: s.ai.models, claude: CLAUDE_MODELS, opencode, opencodeError };
+    // provider/model: a de Desenvolvimento (o botão do topo e a barra do plano usam)
+    return { ...aiFor('main'), slots: s.ai.slots, labels: SLOT_LABEL, claude: CLAUDE_MODELS, opencode, opencodeError };
   }
-  // vale para o próximo passo de cada robô; quem está no meio de um termina com a IA de antes
-  async function setAi({ provider, model }) {
+  // vale para o próximo passo de cada robô; quem está no meio de um termina com a IA de antes.
+  // provider 'same' (só Melhorias e Marketing) volta a seguir a de Desenvolvimento
+  async function setAi({ slot = 'main', provider, model }) {
+    if (!SLOTS.includes(slot)) throw new Error('grupo desconhecido');
+    if (provider === 'same' && slot !== 'main') {
+      s.ai.slots[slot] = null;
+      state.decision(`${SLOT_LABEL[slot]} volta a usar a IA de Desenvolvimento`);
+      state.changed();
+      return aiInfo();
+    }
     if (!['claude', 'opencode'].includes(provider)) throw new Error('IA desconhecida');
-    model = String(model || s.ai.models[provider] || '').trim();
+    model = String(model || '').trim();
     if (!model) throw new Error('escolha um modelo');
     if (provider === 'opencode') {
       const list = await agents.opencodeModels().catch(() => null);
       if (list && !list.some((m) => m.id === model)) throw new Error(`o OpenCode não tem o modelo ${model} (veja \`opencode models\`)`);
     }
-    s.ai.provider = provider;
-    s.ai.models[provider] = model;
-    state.decision(`Trocou a IA dos robôs para ${aiLabel()}`);
-    state.push('OPS_01', `IA dos robôs agora é ${aiLabel()}`);
-    // esperando o plano Claude e trocou de IA: as tasks paradas seguem já na próxima volta
-    if (provider !== 'claude' && s.plan.waitUntil) s.plan.waitUntil = null;
+    s.ai.slots[slot] = { provider, model };
+    state.decision(`Trocou a IA de ${SLOT_LABEL[slot]} para ${aiLabel(slot)}`);
+    state.push('OPS_01', `IA de ${SLOT_LABEL[slot]} agora é ${aiLabel(slot)}`);
+    // esperando o plano Claude e o Desenvolvimento saiu do Claude: as tasks paradas seguem já na próxima volta
+    if (slot === 'main' && provider !== 'claude' && s.plan.waitUntil) s.plan.waitUntil = null;
     state.changed();
     return aiInfo();
   }

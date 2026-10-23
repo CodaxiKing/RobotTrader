@@ -160,8 +160,9 @@ export function parseJson(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-// ai(): a IA escolhida agora, { provider: 'claude' | 'opencode', model }; muda sem reiniciar o motor
-export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = () => ({ provider: 'claude', model }) }) {
+// ai(slot): a IA escolhida agora para o grupo ('main' | 'ideas' | 'marketing'), { provider: 'claude' | 'opencode', model };
+// muda sem reiniciar o motor. usesClaude(): algum grupo usa Claude (só então vale ler o plano)
+export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = () => ({ provider: 'claude', model }), usesClaude = () => ai().provider === 'claude' }) {
   const opencode = createOpenCode({ roles: ROLES, suffix: PT_BR, log });
   // ensaio rápido para os testes (MOTOR_DRY_FAST=1): sem espera e com custo fixo
   const dryFast = () => process.env.MOTOR_DRY_FAST === '1';
@@ -178,8 +179,10 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = ()
   }
 
   // roda um agente até o fim e devolve { text, cost, ok, turns }
-  async function run(role, { prompt, cwd, budget, signal }) {
+  async function run(role, { prompt, cwd, budget, signal, slot = 'main' }) {
     const cfg = ROLES[role];
+    const chosen = ai(slot);
+    if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role); }
     const chosen = ai();
     if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role, prompt); }
     if (chosen.provider === 'opencode') return opencode.run(role, { prompt, cwd, model: chosen.model, signal });
@@ -297,7 +300,7 @@ ${PT_BR}` },
   // uso do plano da conta (o mesmo do /usage): abre uma sessão sem mandar mensagem, então não gasta nada.
   // null quando não há plano (chave de API) ou o Claude Code não respondeu
   async function usage() {
-    if (ai().provider !== 'claude') return null;
+    if (!usesClaude()) return null;
     if (dryRun) {
       if (Date.now() > fake.resetsAt) Object.assign(fake, { used: 0, resetsAt: Date.now() + 10 * 60e3 });
       return { available: true, name: 'ensaio', session: { ...fake }, weekly: { used: 40, resetsAt: Date.now() + 3 * 864e5 } };
