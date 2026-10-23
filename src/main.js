@@ -402,17 +402,18 @@ ovBody.addEventListener('click', async (e) => {
     if (code) await accountCall('code', { code });
     return;
   }
-  if (e.target.closest('[data-ai-toggle]')) return aiMenu(ovBody.querySelector('[data-ai-menu]')?.hidden);
-  const option = e.target.closest('[data-ai-option]');
+  const pick = e.target.closest('[data-ai-pick]');
+  if (pick && e.target.closest('[data-ai-toggle]')) return aiMenu(pick, pick.querySelector('[data-ai-menu]').hidden);
+  const option = pick && e.target.closest('[data-ai-option]');
   if (option) {
-    aiMenu(false);
-    await aiCall({ provider: option.dataset.provider, model: option.dataset.aiOption });
+    aiMenu(pick, false);
+    await aiCall({ slot: pick.dataset.aiPick, provider: option.dataset.provider, model: option.dataset.aiOption });
     return;
   }
-  if (e.target.closest('[data-ai-refresh]')) {
-    ovBody.querySelector('[data-ai-list]').innerHTML = '<p class="ai-empty">Atualizando a lista do OpenCode…</p>';
+  if (pick && e.target.closest('[data-ai-refresh]')) {
+    pick.querySelector('[data-ai-list]').innerHTML = '<p class="ai-empty">Atualizando a lista do OpenCode…</p>';
     await aiCall({ refresh: true });
-    renderAiList();
+    renderAiList(pick);
     return;
   }
   if (e.target.closest('[data-acc-logout]')) {
@@ -741,7 +742,7 @@ async function refreshAccount() {
   const a = accountInfo;
   const opencode = a?.ai?.provider === 'opencode';
   $('account-label').textContent = a?.error ? 'motor fora do ar'
-    : opencode ? aiCurrent(a.ai)?.name || a.ai.model.split('/').pop()
+    : opencode ? aiName(a.ai, a.ai).split('/').pop()
       : a?.email || (a?.using === 'maquina' ? 'esta máquina' : a?.using === 'apiKey' ? 'chave de API' : 'token');
   $('btn-account').title = a?.ai ? `IA dos robôs: ${opencode ? 'OpenCode' : 'Claude'} · ${a.ai.model}` : 'IA e conta que os robôs usam';
   $('btn-account').classList.toggle('warn', !opencode && a?.using === 'maquina');
@@ -750,61 +751,74 @@ async function refreshAccount() {
   if (a?.login?.waiting) setTimeout(refreshAccount, 2000);
 }
 // seletor de IA do painel, no jeito do OpenCode: botão com o modelo atual e menu com busca, por provedor
+// um seletor por grupo (Desenvolvimento, Melhorias, Marketing); Melhorias e Marketing podem seguir Desenvolvimento
 const aiModels = (ai) => [...(ai?.claude || []), ...(ai?.opencode || [])];
-const aiCurrent = (ai) => aiModels(ai).find((m) => m.id === ai.model && (m.provider === 'claude') === (ai.provider === 'claude'));
+// sel: { provider, model }; devolve o modelo da lista (com nome e preço)
+const aiCurrent = (sel, ai = sel) => sel && aiModels(ai).find((m) => m.id === sel.model && (m.provider === 'claude') === (sel.provider === 'claude'));
+const aiName = (sel, ai) => aiCurrent(sel, ai)?.name || sel?.model || '';
 function syncAiPicker() {
   const ai = accountInfo?.ai;
-  const box = ovBody.querySelector('[data-ai-pick]');
-  if (!ai || !box) return;
-  const m = aiCurrent(ai);
-  box.querySelector('[data-ai-name]').textContent = m?.name || ai.model;
-  box.querySelector('[data-ai-toggle]').title = `${ai.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${ai.model}`;
-  if (!box.querySelector('[data-ai-menu]').hidden) renderAiList();
+  if (!ai?.slots) return;
+  for (const box of ovBody.querySelectorAll('[data-ai-pick]')) {
+    const own = ai.slots[box.dataset.aiPick];
+    const sel = own || ai.slots.main;
+    box.querySelector('[data-ai-name]').textContent = own ? aiName(own, ai) : `Igual ao Desenvolvimento · ${aiName(sel, ai)}`;
+    box.querySelector('[data-ai-toggle]').title = `${sel.provider === 'claude' ? 'Claude' : 'OpenCode'} · ${sel.model}`;
+    if (!box.querySelector('[data-ai-menu]').hidden) renderAiList(box);
+  }
 }
 const aiBadge = (m) => (m.plan ? '<em class="plan">Plano</em>' : m.free ? '<em>Grátis</em>'
   : m.price ? `<em class="paid" title="US$ por milhão de tokens: entrada / saída">$${m.price.input} / $${m.price.output}</em>` : '');
-function renderAiList() {
+function renderAiList(box) {
   const ai = accountInfo?.ai;
-  const list = ovBody.querySelector('[data-ai-list]');
-  if (!ai || !list) return;
-  const q = (ovBody.querySelector('[data-ai-q]')?.value || '').trim().toLowerCase();
+  const list = box?.querySelector('[data-ai-list]');
+  if (!ai?.slots || !list) return;
+  const slot = box.dataset.aiPick;
+  const q = (box.querySelector('[data-ai-q]')?.value || '').trim().toLowerCase();
   const words = q.split(/\s+/).filter(Boolean);
   // "grátis" ou "free" na busca também pega os modelos sem custo
   const hit = (m) => words.every((w) => `${m.name} ${m.id} ${m.providerName} ${m.free ? 'grátis gratis free' : ''}`.toLowerCase().includes(w));
-  const current = aiCurrent(ai);
+  const current = aiCurrent(ai.slots[slot], ai);
+  // Melhorias e Marketing: primeira opção é seguir a IA de Desenvolvimento
+  const same = slot !== 'main' && (!words.length || words.every((w) => 'igual ao desenvolvimento mesma'.includes(w)))
+    ? `<button class="ai-option${ai.slots[slot] ? '' : ' on'}" role="option" data-ai-option="" data-provider="same"><span>Igual ao Desenvolvimento</span><em>${esc(aiName(ai.slots.main, ai))}</em>${ai.slots[slot] ? '' : '<i>✓</i>'}</button>` : '';
   const groups = new Map();
   for (const m of aiModels(ai).filter(hit)) {
     if (!groups.has(m.providerName)) groups.set(m.providerName, []);
     groups.get(m.providerName).push(m);
   }
   const order = (g) => (g.startsWith('Claude') ? 0 : g === 'OpenCode' ? 1 : 2);
-  list.innerHTML = [...groups].sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b)).map(([g, ms]) => `
+  list.innerHTML = same + [...groups].sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b)).map(([g, ms]) => `
     <div class="ai-group">${esc(g)}</div>
     ${ms.sort((a, b) => a.name.localeCompare(b.name)).map((m) => `
       <button class="ai-option${m === current ? ' on' : ''}" role="option" data-ai-option="${esc(m.id)}" data-provider="${m.provider === 'claude' ? 'claude' : 'opencode'}" title="${esc(m.id)}${m.context ? ` · contexto ${Math.round(m.context / 1000)}k` : ''}">
         <span>${esc(m.name)}</span>${aiBadge(m)}${m === current ? '<i>✓</i>' : ''}
       </button>`).join('')}`).join('')
-    || `<p class="ai-empty">${ai.opencodeError ? esc(ai.opencodeError) : 'Nenhum modelo com esse nome.'}</p>`;
+    || same || `<p class="ai-empty">${ai.opencodeError ? esc(ai.opencodeError) : 'Nenhum modelo com esse nome.'}</p>`;
   list.querySelector('.ai-option')?.classList.add('active');
 }
-function aiMenu(open) {
-  const menu = ovBody.querySelector('[data-ai-menu]');
-  if (!menu) return;
-  menu.hidden = !open;
-  ovBody.querySelector('[data-ai-toggle]').setAttribute('aria-expanded', String(!!open));
-  if (!open) return;
-  const q = ovBody.querySelector('[data-ai-q]');
+// abre o menu de um grupo (fechando os outros) ou fecha; sem box, fecha todos
+function aiMenu(box, open) {
+  for (const b of ovBody.querySelectorAll('[data-ai-pick]')) {
+    const show = !!open && b === box;
+    b.querySelector('[data-ai-menu]').hidden = !show;
+    b.querySelector('[data-ai-toggle]').setAttribute('aria-expanded', String(show));
+    b.classList.toggle('open', show);
+  }
+  if (!open || !box) return;
+  const q = box.querySelector('[data-ai-q]');
   q.value = '';
-  renderAiList();
-  ovBody.querySelector('.ai-option.on')?.scrollIntoView({ block: 'nearest' });
+  renderAiList(box);
+  box.querySelector('.ai-option.on')?.scrollIntoView({ block: 'nearest' });
   q.focus();
 }
-ovBody.addEventListener('input', (e) => { if (e.target.matches('[data-ai-q]')) renderAiList(); });
+ovBody.addEventListener('input', (e) => { if (e.target.matches('[data-ai-q]')) renderAiList(e.target.closest('[data-ai-pick]')); });
 ovBody.addEventListener('keydown', (e) => {
   if (!e.target.matches('[data-ai-q]')) return;
-  const opts = [...ovBody.querySelectorAll('.ai-option')];
+  const box = e.target.closest('[data-ai-pick]');
+  const opts = [...box.querySelectorAll('.ai-option')];
   const i = opts.findIndex((o) => o.classList.contains('active'));
-  if (e.key === 'Escape') { e.stopPropagation(); aiMenu(false); return; }
+  if (e.key === 'Escape') { e.stopPropagation(); aiMenu(box, false); return; }
   if (e.key === 'Enter') { opts[i]?.click(); return; }
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   e.preventDefault();
@@ -813,14 +827,20 @@ ovBody.addEventListener('keydown', (e) => {
   next?.scrollIntoView({ block: 'nearest' });
 });
 // clicar fora do menu fecha
-document.addEventListener('click', (e) => { if (!e.target.closest('[data-ai-pick]')) aiMenu(false); });
+document.addEventListener('click', (e) => { if (!e.target.closest('[data-ai-pick]')) aiMenu(null, false); });
 async function aiCall(body) {
   try {
     const res = await fetch('./api/ai', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const out = await res.json();
     if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
     if (accountInfo) accountInfo.ai = out;
-    if (!body.refresh) toast({ level: 'info', text: `IA dos robôs: ${aiCurrent(out)?.name || out.model}${out.provider === 'claude' ? ' (Claude)' : ' (OpenCode)'}. Vale a partir do próximo passo de cada robô.` });
+    if (!body.refresh) {
+      const label = out.labels?.[body.slot] || 'Desenvolvimento';
+      const sel = out.slots?.[body.slot];
+      toast({ level: 'info', text: sel
+        ? `IA de ${label}: ${aiName(sel, out)} (${sel.provider === 'claude' ? 'Claude' : 'OpenCode'}). Vale a partir do próximo passo de cada robô.`
+        : `${label} volta a usar a IA de Desenvolvimento.` });
+    }
   } catch (err) {
     toast({ level: 'danger', text: `Não troquei a IA: ${err.message}` });
   }
