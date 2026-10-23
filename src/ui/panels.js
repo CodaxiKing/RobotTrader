@@ -9,6 +9,13 @@ import { esc, who, fmtN } from './html.js';
 
 // root(): o elemento do overlay, para o histórico ler a busca que o dono digitou
 // account(): a conta Claude que o motor está usando (GET /api/account), ou null; live: se há motor
+// grupos que podem ter IA própria: [id do motor, nome, quem entra]
+export const AI_SLOTS = [
+  ['main', 'Desenvolvimento', 'P.O, devs, segurança, QA e o restante'],
+  ['ideas', 'Melhorias', 'sala 06'],
+  ['marketing', 'Marketing', 'agência, sala 07'],
+];
+
 export function createPanels({ feed, root, account = () => null, live = false }) {
   // link do pull request no GitHub (o motor abre um por task)
   const prLink = (pr) => (pr?.url ? ` · <a class="pr-link" href="${esc(pr.url)}" target="_blank" rel="noopener">PR #${esc(pr.number)}</a>` : '');
@@ -239,14 +246,16 @@ export function createPanels({ feed, root, account = () => null, live = false })
       title: 'IA dos robôs',
       // a escolha do modelo e o e-mail ficam fora do trecho que redesenha, para não perder o que você digitou
       shell: () => `${live ? `
-        <div class="ai-pick" data-ai-pick>
-          <small>Modelo que os robôs usam</small>
-          <button class="ai-current" data-ai-toggle aria-haspopup="listbox" aria-expanded="false"><i>▣</i><b data-ai-name>carregando…</b><span>⌄</span></button>
-          <div class="ai-menu" data-ai-menu hidden>
-            <label class="ai-search"><i>⌕</i><input data-ai-q autocomplete="off" spellcheck="false" placeholder="Buscar modelos" /></label>
-            <div class="ai-list" data-ai-list role="listbox"></div>
-            <button class="ai-foot" data-ai-refresh><i>⟳</i>Atualizar a lista de modelos</button>
-          </div>
+        <div class="ai-picks">${AI_SLOTS.map(([slot, label, hint]) => `
+          <div class="ai-pick" data-ai-pick="${slot}">
+            <small><b>${label}</b> · ${hint}</small>
+            <button class="ai-current" data-ai-toggle aria-haspopup="listbox" aria-expanded="false"><i>▣</i><b data-ai-name>carregando…</b><span>⌄</span></button>
+            <div class="ai-menu" data-ai-menu hidden>
+              <label class="ai-search"><i>⌕</i><input data-ai-q autocomplete="off" spellcheck="false" placeholder="Buscar modelos" /></label>
+              <div class="ai-list" data-ai-list role="listbox"></div>
+              <button class="ai-foot" data-ai-refresh><i>⟳</i>Atualizar a lista de modelos</button>
+            </div>
+          </div>`).join('')}
         </div>` : ''}<div data-body></div>${live ? `
         <div class="acc-form">
           <label>E-mail da conta Claude que os robôs vão usar<input data-acc-email type="email" autocomplete="email" placeholder="voce@exemplo.com" /></label>
@@ -264,15 +273,15 @@ export function createPanels({ feed, root, account = () => null, live = false })
         if (a.error) return `<p class="empty">Não consegui falar com o motor: ${esc(a.error)}</p>`;
         const override = (a.using === 'apiKey' || a.using === 'token') && a.connected;
         const ai = a.ai;
-        const onClaude = !ai || ai.provider === 'claude';
+        // grupos e a IA efetiva de cada um (Melhorias e Marketing sem escolha própria seguem Desenvolvimento)
+        const slots = ai?.slots ? AI_SLOTS.map(([slot, label]) => [label, ai.slots[slot] || ai.slots.main]) : [];
+        const onClaude = !ai || slots.some(([, s]) => s.provider === 'claude');
+        const onOpenCode = slots.some(([, s]) => s.provider === 'opencode');
         return `
-          ${ai ? `<div class="acc-now ai">
-            <small>Os robôs estão usando</small>
-            <b>${onClaude ? 'Claude' : 'OpenCode'} · ${esc(ai.model)}</b>
-            <small>${onClaude
-              ? 'Pela conta Claude abaixo. Se o plano acabar no meio, o robô espera a renovação e continua.'
-              : 'Pelo OpenCode desta máquina, com as contas e chaves dele (opencode auth login). O gasto informado pelo provedor entra no orçamento do dia; o plano Claude não é usado.'}</small>
-          </div>` : ''}
+          ${ai ? `<p class="panel-hint ai-notes">
+            ${onClaude ? `<span><b>Claude</b> (${esc(slots.filter(([, s]) => s.provider === 'claude').map(([l]) => l).join(', '))}): pela conta abaixo; se o plano acabar no meio, o robô espera a renovação e continua.</span>` : ''}
+            ${onOpenCode ? `<span><b>OpenCode</b> (${esc(slots.filter(([, s]) => s.provider === 'opencode').map(([l]) => l).join(', '))}): pelas contas e chaves do OpenCode desta máquina; o gasto informado pelo provedor entra no orçamento do dia.</span>` : ''}
+          </p>` : ''}
           <div class="ov-floor">Conta Claude${onClaude ? '' : ' (vale quando a IA for Claude)'}</div>
           <div class="acc-now ${esc(a.using)}">
             <small>${onClaude ? 'Os robôs estão usando' : 'Conta que os robôs usam com o Claude'}</small>
