@@ -201,6 +201,16 @@ export function createOrchestrator(config) {
       setPaused(true, `orçamento do dia (US$ ${s.budget}) atingido`);
       state.alert('danger', `Orçamento do dia atingido (US$ ${s.spend.today.toFixed(2)}): o escritório pausou.`, { panel: 'metrics' });
     }
+    // teto do dia por robô (robotDailyUsd: número, ou mapa por papel): só quem estourou para;
+    // a task fica com ele esperando, e o resto do escritório segue gastando. Compara com o gasto
+    // de hoje (costToday zera quando o dia vira); cost é o acumulado, que fica só nas métricas
+    const cap = typeof config.robotDailyUsd === 'number' ? config.robotDailyUsd : config.robotDailyUsd?.[role] ?? config.robotDailyUsd?.default;
+    const spentToday = s.robots[robotId].costToday ?? s.robots[robotId].cost;
+    if (cap != null && spentToday >= cap && !s.robots[robotId].paused) {
+      state.setRobot(robotId, { paused: true, pausedBy: 'teto' });
+      state.alert('warn', `${robotId} bateu o teto do dia (US$ ${cap}) e parou só ele: a ${task?.id || 'tarefa'} fica com ele até o dia virar (ou você retomar).`, { robotId, taskId: task?.id, panel: 'metrics' });
+      state.push('OPS_01', `${robotId} pausou no teto do dia (US$ ${cap})`);
+    }
     if (!res.ok) throw new Error(`o agente parou (${res.subtype})`);
     return res.text;
   }
@@ -216,12 +226,44 @@ export function createOrchestrator(config) {
   ].filter(Boolean).join('\n\n');
   const brief = (t) => `Task ${t.id}: ${t.title}\n\n${t.body || ''}${t.criteria ? `\n\nCritérios de aceite:\n${t.criteria}` : ''}`;
 
-  // P.O: critérios de aceite e passa para um dev livre da área
+  // P.O: antes de escrever os critérios, confere se a funcionalidade já está implementada no app;
+  // já estando, a task vira Done no Project e no board, sem gastar um dev. A resposta fica em cache
+  // por título (s.existsCache), para a mesma tela aprovada duas vezes não gastar o check duas vezes
   function refine(task, devId) {
     // o dev fica reservado enquanto o P.O refina, para não pegar outra coisa no meio
     Object.assign(task, { column: 'refining', dev: devId });
-    return work('PO_01', task, 'Escrevendo critérios de aceite', async () => {
-      task.criteria = await agent('PO_01', 'po', task, { prompt: brief(task), cwd: repoOf(task).path });
+    return work('PO_01', task, 'Conferindo se já existe no app', async () => {
+      const repo = repoOf(task);
+      // correção (segurança/produção) ou volta do QA nunca entra aqui: "já existe" não corrige furo
+      const isFix = task.origin === 'security' || task.origin === 'ops' || task.rework > 0;
+      if (!task.checkedExists && !isFix) {
+        // o mesmo título aprovado duas vezes no canvas vira a mesma resposta: confere uma vez só
+        const key = slug(shortTitle(task));
+        let exists = s.existsCache?.[key] || null;
+        if (!exists) {
+          try {
+            exists = parseJson(await agent('PO_01', 'existsCheck', task, { prompt: brief(task), cwd: repo.path }));
+          } catch (err) {
+            if (err.planLimit) throw err; // plano acabou: estaciona e reconfere na volta, sem marcar como checado
+            exists = null; /* outra falha: segue o fluxo normal */
+          }
+          if (exists) { s.existsCache ||= {}; s.existsCache[key] = exists; }
+        }
+        task.checkedExists = true;
+        if (exists?.implemented) {
+          Object.assign(task, { column: 'merged', mergedAt: now(), dev: null, alreadyDone: true });
+          state.step(task, 'PO_01', `Já existia no app (${exists.evidence || 'conferido no código'}) · marquei como Done, sem implementar de novo`);
+          const sc = task.screen && s.canvas.screens.find((x) => x.file === task.screen);
+          if (sc) {
+            Object.assign(sc, { status: 'entregue', outdated: false });
+            s.canvas.changes.push({ time: now(), text: `Marcou "${sc.name}" como entregue (${task.id}): já estava no código` });
+          }
+          await project.move(task.itemId, 'done');
+          return;
+        }
+      }
+      state.setRobot('PO_01', { activity: 'Escrevendo critérios de aceite' });
+      task.criteria = await agent('PO_01', 'po', task, { prompt: brief(task), cwd: repo.path });
       Object.assign(task, { column: 'dev', dev: devId });
       state.step(task, 'PO_01', `Critérios prontos · passou para ${devId}`);
       await project.move(task.itemId, 'doing');
@@ -352,13 +394,21 @@ export function createOrchestrator(config) {
       }
       await project.move(task.itemId, 'done');
       await git.removeWorktree(repo, task.worktree);
+      // a branch já está em develop: apaga do remoto e do local para não acumular branch morta
+      await git.deleteBranch(repo, task.branch);
+      state.step(task, 'OPS_01', `Branch ${task.branch} apagada (remoto e local) · já está em ${base}`);
     });
   }
 
   // reunião de verdade: com o que falhou, o P.O reescreve os critérios antes da próxima tentativa
   async function meeting(task, reviewerId) {
     if (task.rework < config.meetingAfter || task.aligned || s.meeting) return;
-    const people = ['PO_01', task.dev, reviewerId];
+    // pausado não vai para a reunião; sem o P.O não há quem reescreva os critérios, então adia
+    const people = ['PO_01', task.dev, reviewerId].filter((id, i, a) => id && s.robots[id] && a.indexOf(id) === i && !s.robots[id].paused);
+    if (!people.includes('PO_01')) {
+      state.push('OPS_01', `${task.id}: reunião adiada, o P.O está pausado · os critérios seguem os mesmos por enquanto`);
+      return;
+    }
     s.meeting = { taskId: task.id, robots: people, until: null };
     people.forEach((id) => state.setRobot(id, { status: 'meeting', taskId: task.id, activity: `Reunião sobre ${task.id}` }));
     state.alert('warn', `${task.id} voltou ${task.rework} vezes: reunião para rever os critérios`, { taskId: task.id, panel: 'board' });
@@ -375,7 +425,8 @@ export function createOrchestrator(config) {
 
   // ── release: o OPS propõe, o dono aprova, e só então vai para main ──
   function proposeRelease() {
-    const ready = s.board.filter((t) => t.column === 'merged' && !t.released);
+    // já existia no app: não virou entrega do escritório, não entra no release
+    const ready = s.board.filter((t) => t.column === 'merged' && !t.released && !t.alreadyDone);
     if (ready.length < config.releaseBatch || s.ideas.some((i) => i.focus === 'release' && i.status === 'aguardando')) return;
     const version = `v1.${s.releases.length + 1}.0`;
     s.ideas.push({
@@ -457,6 +508,21 @@ export function createOrchestrator(config) {
   // para um ponto de onde o fluxo anda sozinho. O que o dev deixou no worktree vira commit e segue para a
   // segurança, sem rodar o dev de novo; sem nada salvo, o dev recomeça.
   function recover() {
+    // task parada há mais de 3 dias não mantém worktree e branch para sempre: limpa o órfão;
+    // se você destravar depois, o dev recomeça num worktree novo a partir da base
+    const stale = Date.now() - 3 * 24 * 3600e3;
+    for (const t of s.board) {
+      if (!t.blocked || !t.worktree) continue;
+      const paradaEm = new Date(t.timeline?.at(-1)?.ts || t.createdAt || 0).getTime();
+      if (paradaEm > stale) continue;
+      const repo = repoOf(t);
+      const dir = t.worktree;
+      t.worktree = null;
+      state.step(t, 'OPS_01', `Parada há mais de 3 dias: removi o worktree e a branch ${t.branch} · destravar recomeça do zero`);
+      git.removeWorktree(repo, dir)
+        .then(() => git.deleteBranch(repo, t.branch))
+        .catch((err) => log(`limpeza de ${t.id}: ${err.message}`));
+    }
     for (const t of s.board) {
       // travada espera você destravar, também depois de um reinício
       if (t.blocked) continue;
@@ -531,10 +597,14 @@ export function createOrchestrator(config) {
     if (extras.decide(idea, approved)) return;
     if (!approved) return;
     if (idea.focus === 'release') return release(idea);
-    // sugestão aprovada vira item do GitHub Project (e task no board)
+    // sugestão aprovada vira item do GitHub Project (e task no board); erro em produção vira correção
     const itemId = await project.create(idea.title, idea.detail);
-    const t = addTask({ id: `S-${idea.id}`, itemId, title: idea.title.replace(/^(Implementar|Nova tela:)\s*"?|"$/g, ''), body: idea.detail, area: idea.area || 'web', origin: 'idea', from: idea.by });
+    const t = addTask({ id: `S-${idea.id}`, itemId, title: idea.title.replace(/^(Implementar|Corrigir erro em produção:|Nova tela:)\s*"?|"$/g, ''), body: idea.detail, area: idea.area || 'web', origin: idea.focus === 'ops' ? 'ops' : 'idea', from: idea.by });
     idea.taskId = t.id;
+    if (idea.incident) {
+      const inc = s.incidents.find((i) => i.sentryId === idea.incident);
+      if (inc) inc.taskId = t.id;
+    }
     state.push(idea.by, `Aprovada por você · virou ${t.id} no Backlog`, { taskId: t.id });
   }
   function prioritize(taskId, beforeId = null) {
@@ -571,12 +641,14 @@ export function createOrchestrator(config) {
 
   return {
     state,
-    start() {
+    // every: intervalo entre voltas do agenda (2 s no motor; os testes usam um bem menor)
+    start({ every = 2000 } = {}) {
       recover();
       syncProject().catch((err) => state.alert('warn', `Não li o GitHub Project: ${err.message}`));
       lastSync = Date.now();
-      setInterval(schedule, 2000);
+      const timer = setInterval(schedule, every);
       state.push('OPS_01', dryRun ? `Motor ligado em modo de ensaio (sem API, sem git, sem GitHub) · ${aiLabel()}` : `Motor ligado · ${Object.keys(config.repos).join(' e ')} · Project #${config.project.number} · ${aiLabel()}`);
+      return () => clearInterval(timer);
     },
     actions: {
       decide,
@@ -592,7 +664,7 @@ export function createOrchestrator(config) {
       setAi,
       setPaused: (v) => setPaused(v),
       adjustIdea: (id, note) => extras.adjust(id, note),
-      setRobotPaused(id, v) { if (s.robots[id]) { s.robots[id].paused = v; state.decision(`${v ? 'Pausou' : 'Retomou'} ${id}`); } },
+      setRobotPaused(id, v) { if (s.robots[id]) { s.robots[id].paused = v; delete s.robots[id].pausedBy; state.decision(`${v ? 'Pausou' : 'Retomou'} ${id}`); } },
       setBudget(usd) {
         s.budget = Math.max(1, Math.round(usd));
         state.decision(`Mudou o orçamento do dia para US$ ${s.budget}`);

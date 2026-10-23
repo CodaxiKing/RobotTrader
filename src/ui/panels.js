@@ -67,6 +67,23 @@ export function createPanels({ feed, root, account = () => null, live = false })
       </div>`;
   }
 
+  // o que é da agência (post e divulgação) espera você na aba Marketing; o resto, nas Aprovações
+  const isMktIdea = (i) => ['post', 'divulgação'].includes(i.focus);
+
+  // cartão de uma sugestão esperando você (ou já decidida): o mesmo nas abas Aprovações e Marketing
+  const ideaCard = (i) => {
+    const release = i.focus === 'release';
+    const post = i.focus === 'post' && feed.marketing?.pieces.find((p) => p.id === i.piece);
+    const approveLabel = release ? `✔ Aprovar e mandar para ${esc(OFFICE.productionBranch)}` : post ? '✔ Aprovar e agendar' : i.focus === 'divulgação' ? '✔ Aprovar a divulgação' : '✔ Aprovar e mandar para o board';
+    return `
+    <article class="idea ${i.status}${release ? ' release' : ''}${post ? ' post' : ''}" style="--a:${(FOCUS[i.focus] || FOCUS.dev).color}">
+      <header><span class="tag">${(FOCUS[i.focus] || FOCUS.dev).label}</span><span class="status">${esc(i.status)}${i.taskId ? ` · ${esc(i.taskId)}${release ? '' : ' no board'}` : ''}</span></header>
+      ${post ? `<div class="post-row" data-piece="${esc(post.id)}">${creative(post)}<div><h4>${esc(i.title)}</h4><pre class="caption">${esc(post.caption)}</pre><small>nota da agência ${post.score?.toFixed(1)} · ver roteiro, avaliação e linha do tempo →</small></div></div>` : `<h4>${esc(i.title)}</h4><p>${esc(i.detail)}</p>`}
+      <footer>${who(i.by)} · ${fmtTime(i.ts)}</footer>
+      ${i.status === 'aguardando' && feed.canDecide ? `<div class="decide"><button data-approve="${esc(i.id)}">${approveLabel}</button>${post ? `<button data-adjust="${esc(i.id)}" class="mid">✎ Pedir ajuste</button>` : ''}<button data-reject="${esc(i.id)}" class="no">${release ? 'Segurar' : 'Recusar'}</button></div>` : ''}
+    </article>`;
+  };
+
   const PANELS = {
     marketing: {
       title: 'Agência de marketing · criativos e vídeos',
@@ -75,11 +92,13 @@ export function createPanels({ feed, root, account = () => null, live = false })
         if (!m) return '<p class="empty">A agência de marketing ainda não está ligada no motor; ela roda na simulação.</p>';
         const live = m.pieces.filter((p) => p.metrics);
         const sum = (k) => live.reduce((n, p) => n + p.metrics[k], 0);
-        const waiting = feed.ideas.filter((i) => ['post', 'divulgação'].includes(i.focus) && i.status === 'aguardando').length;
+        const waiting = feed.ideas.filter((i) => isMktIdea(i) && i.status === 'aguardando').reverse();
         const tiles = [['Publicados', live.length], ['Alcance', sum('reach')], ['Curtidas e comentários', sum('likes') + sum('comments')], ['Salvamentos', sum('saves')], ['Cliques no link', sum('clicks')]];
         return `
           <div class="tiles">${tiles.map(([k, v]) => `<div class="tile"><small>${k}</small><b>${fmtN(v)}</b></div>`).join('')}</div>
-          ${waiting ? `<button data-open="ideas" class="today-cta mkt-cta">${waiting} post(s) e ideia(s) de divulgação esperando a sua aprovação →</button>` : '<p class="panel-hint">Nada publica sem você: cada criativo aprovado pela agência vem para a sua aprovação antes de ir para as redes.</p>'}
+          <div class="ov-floor">Da agência esperando você · ${waiting.length}</div>
+          ${waiting.length ? `<div class="ideas">${waiting.map(ideaCard).join('')}</div>` : '<p class="panel-hint">Nada publica sem você: cada criativo aprovado pela agência vem para a sua aprovação antes de ir para as redes, e as ideias de divulgação aparecem aqui quando há resultado.</p>'}
+          <div class="ov-floor">Criativos e vídeos</div>
           <div class="mkt-board">${STAGES.map((st) => {
             const list = m.pieces.filter((p) => p.stage === st.id).slice(-8).reverse();
             return `<section class="col"><h4>${esc(st.label)} <b>${m.pieces.filter((p) => p.stage === st.id).length}</b></h4>${list.map((p) => `
@@ -91,23 +110,35 @@ export function createPanels({ feed, root, account = () => null, live = false })
     },
     board: {
       title: 'Board do GitHub · PetLive',
-      html: () => `<p class="panel-hint">Arraste os cards do Backlog para mudar a prioridade: o P.O sempre pega o primeiro que tem dev livre. Clique num card para ver a linha do tempo.</p>
-        <div class="kanban">${COLUMNS.map((c) => {
+      // a busca e o filtro de coluna ficam no shell, para o valor digitado sobreviver ao redesenho ao vivo
+      shell: () => `<div class="audit-filter board-filter"><input data-board-q placeholder="buscar task: #101, tela, corrigir…" /><select data-board-col><option value="">todas as colunas</option>${COLUMNS.map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></div><div data-body></div>`,
+      html: () => {
+        const q = (root().querySelector('[data-board-q]')?.value || '').toLowerCase();
+        const col = root().querySelector('[data-board-col]')?.value || '';
+        const match = (t) => !q || `${t.id} ${t.title} ${t.dev || ''} ${t.criteria || ''}`.toLowerCase().includes(q);
+        const cols = col ? COLUMNS.filter((c) => c.id === col) : COLUMNS;
+        const hits = feed.board.filter(match).length;
+        return `<p class="panel-hint">Arraste os cards do Backlog para mudar a prioridade: o P.O sempre pega o primeiro que tem dev livre. Clique num card para ver a linha do tempo.${q ? ` · ${hits} task(s) com “${esc(q)}”` : ''}</p>
+        <div class="kanban">${cols.map((c) => {
         const tasks = feed.board.filter((t) => t.column === c.id);
-        // o Backlog aparece na ordem de prioridade; as outras colunas, a mais recente em cima
-        const shown = c.id === 'todo' ? tasks.slice(0, 14) : tasks.slice(-14).reverse();
-        return `<section class="col col-${c.id}" data-col="${c.id}"><h4>${esc(c.label)} <b>${tasks.length}</b></h4>${shown.map((t, i) => {
+        // o Backlog aparece na ordem de prioridade; as outras colunas, a mais recente em cima.
+        // com busca, o limite de 14 sobe para 30 para não esconder o que combinou
+        const ordered = c.id === 'todo' ? tasks : tasks.slice(-14).reverse();
+        const shown = ordered.filter(match).slice(0, q ? 30 : 14);
+        return `<section class="col col-${c.id}" data-col="${c.id}"><h4>${esc(c.label)} <b>${tasks.filter(match).length}${tasks.filter(match).length !== tasks.length ? ` de ${tasks.length}` : ''}</b></h4>${shown.map((t, i) => {
           const open = (t.findings || []).filter((f) => f.open);
           const fix = t.origin === 'security' || t.origin === 'ops';
           return `
           <article class="task-card${fix ? ' sec-fix' : ''}" data-task="${esc(t.id)}" ${c.id === 'todo' ? 'draggable="true"' : ''} style="--a:${fix ? SEVERITY.alta : AREA[t.area].color}">
             <div class="tc-top"><b>${c.id === 'todo' ? `<i class="prio">${i + 1}</i>` : ''}${esc(t.id)}</b><span class="area">${AREA[t.area].label}</span></div>
             <div class="tc-title">${esc(t.title)}</div>
+            ${t.body ? `<p class="tc-desc">${esc(t.body)}</p>` : ''}
             ${open.map((f) => `<div class="finding" style="--s:${SEVERITY[f.severity]}"><b>${esc(f.severity)}</b> ${esc(f.title)}<small>${esc(f.fix)}</small></div>`).join('')}
-            <div class="tc-meta">${t.dev ? `dev ${who(t.dev)}` : ORIGIN[t.origin]?.(t) || 'aguardando o P.O'}${t.secBy ? ` · revisão ${who(t.secBy)}` : ''}${t.qa ? ` · QA ${who(t.qa)}` : ''}${t.commits?.length ? ` · ${t.commits.length} commits` : ''}${t.rework ? ` · ${t.rework}× correção` : ''}${t.findings?.length && !open.length ? ` · 🛡 ${t.findings.length} corrigida(s)` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${t.cost ? ` · ${usd(t.cost)}` : ''}${prLink(t.pr)}</div>
+            <div class="tc-meta">${t.alreadyDone ? '✔ já existia no app · marcada como Done pelo P.O' : t.dev ? `dev ${who(t.dev)}` : ORIGIN[t.origin]?.(t) || 'aguardando o P.O'}${t.secBy ? ` · revisão ${who(t.secBy)}` : ''}${t.qa ? ` · QA ${who(t.qa)}` : ''}${t.commits?.length ? ` · ${t.commits.length} commits` : ''}${t.rework ? ` · ${t.rework}× correção` : ''}${t.findings?.length && !open.length ? ` · 🛡 ${t.findings.length} corrigida(s)` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${t.cost ? ` · ${usd(t.cost)}` : ''}${prLink(t.pr)}</div>
           </article>`;
         }).join('') || '<p class="empty">vazio</p>'}</section>`;
-      }).join('')}</div>`,
+      }).join('')}</div>`;
+      },
     },
     reports: {
       title: 'Relatórios do QA',
@@ -154,31 +185,21 @@ export function createPanels({ feed, root, account = () => null, live = false })
     ideas: {
       title: 'Aguardando sua aprovação',
       html: () => {
-        if (!feed.ideas.length) return '<p class="empty">Nada esperando você ainda. Os robôs seguem analisando o SaaS.</p>';
-        const pending = feed.ideas.filter((i) => i.status === 'aguardando').reverse();
-        const decided = feed.ideas.filter((i) => i.status !== 'aguardando').reverse();
-        const card = (i) => {
-          const release = i.focus === 'release';
-          const post = i.focus === 'post' && feed.marketing?.pieces.find((p) => p.id === i.piece);
-          const approveLabel = release ? `✔ Aprovar e mandar para ${esc(OFFICE.productionBranch)}` : post ? '✔ Aprovar e agendar' : i.focus === 'divulgação' ? '✔ Aprovar a divulgação' : '✔ Aprovar e mandar para o board';
-          return `
-          <article class="idea ${i.status}${release ? ' release' : ''}${post ? ' post' : ''}" style="--a:${(FOCUS[i.focus] || FOCUS.dev).color}">
-            <header><span class="tag">${(FOCUS[i.focus] || FOCUS.dev).label}</span><span class="status">${esc(i.status)}${i.taskId ? ` · ${esc(i.taskId)}${release ? '' : ' no board'}` : ''}</span></header>
-            ${post ? `<div class="post-row" data-piece="${esc(post.id)}">${creative(post)}<div><h4>${esc(i.title)}</h4><pre class="caption">${esc(post.caption)}</pre><small>nota da agência ${post.score?.toFixed(1)} · ver roteiro, avaliação e linha do tempo →</small></div></div>` : `<h4>${esc(i.title)}</h4><p>${esc(i.detail)}</p>`}
-            <footer>${who(i.by)} · ${fmtTime(i.ts)}</footer>
-            ${i.status === 'aguardando' && feed.canDecide ? `<div class="decide"><button data-approve="${esc(i.id)}">${approveLabel}</button>${post ? `<button data-adjust="${esc(i.id)}" class="mid">✎ Pedir ajuste</button>` : ''}<button data-reject="${esc(i.id)}" class="no">${release ? 'Segurar' : 'Recusar'}</button></div>` : ''}
-          </article>`;
-        };
+        // posts e divulgação são da agência: esperam você na aba Marketing, não aqui
+        const own = feed.ideas.filter((i) => !isMktIdea(i));
+        if (!own.length) return '<p class="empty">Nada esperando você ainda. Os robôs seguem analisando o SaaS.</p>';
+        const pending = own.filter((i) => i.status === 'aguardando').reverse();
+        const decided = own.filter((i) => i.status !== 'aguardando').reverse();
         return `<div class="ov-floor">Aguardando sua aprovação · ${pending.length}</div>
           ${feed.canDecide ? '' : '<p class="empty">A aprovação pelo escritório precisa do servidor do motor (npm run motor). Sem ele, o escritório só mostra.</p>'}
-          ${pending.length ? `<div class="ideas">${pending.map(card).join('')}</div>` : '<p class="empty">Nada esperando você. Os robôs seguem analisando.</p>'}
-          ${decided.length ? `<div class="ov-floor">Decididas</div><div class="ideas">${decided.slice(0, 30).map(card).join('')}</div>` : ''}`;
+          ${pending.length ? `<div class="ideas">${pending.map(ideaCard).join('')}</div>` : '<p class="empty">Nada esperando você. Os robôs seguem analisando.</p>'}
+          ${decided.length ? `<div class="ov-floor">Decididas</div><div class="ideas">${decided.slice(0, 30).map(ideaCard).join('')}</div>` : ''}`;
       },
     },
     releases: {
       title: 'Produção · releases, erros e changelog',
       html: () => {
-        const waiting = feed.board.filter((t) => t.column === 'merged' && !t.released);
+        const waiting = feed.board.filter((t) => t.column === 'merged' && !t.released && !t.alreadyDone);
         const pendingRelease = feed.ideas.find((i) => i.focus === 'release' && i.status === 'aguardando');
         const last = feed.releases?.at(-1);
         return `
@@ -188,7 +209,7 @@ export function createPanels({ feed, root, account = () => null, live = false })
             ${pendingRelease ? `<button data-open="ideas">${esc(pendingRelease.title)} espera você</button>` : `<p class="panel-hint">Os robôs só fazem merge em ${esc(OFFICE.baseBranch)}. O OPS_01 propõe o release a cada ${4} entregas, e ele só vai para ${esc(OFFICE.productionBranch)} com a sua aprovação.</p>`}
           </div>
           <div class="ov-floor">Erros em produção</div>
-          ${(feed.incidents || []).length ? `<ul class="changes">${feed.incidents.slice().reverse().slice(0, 10).map((i) => `<li><time>${fmtTime(i.ts)}</time><b style="color:${SEVERITY[i.severity]}">${esc(i.severity)}</b> ${esc(i.error)} · ${i.count}× · ${esc(i.release || '')} · correção ${esc(i.taskId)}</li>`).join('')}</ul>` : '<p class="empty">Nenhum erro em produção.</p>'}
+          ${(feed.incidents || []).length ? `<ul class="changes">${feed.incidents.slice().reverse().slice(0, 10).map((i) => `<li><time>${fmtTime(i.ts)}</time><b style="color:${SEVERITY[i.severity]}">${esc(i.severity)}</b> ${esc(i.error)} · ${i.count}× · ${esc(i.release || '')} · correção ${i.taskId ? esc(i.taskId) : 'esperando sua aprovação'}</li>`).join('')}</ul>` : '<p class="empty">Nenhum erro em produção.</p>'}
           <div class="ov-floor">Releases</div>
           ${(feed.releases || []).length ? feed.releases.slice().reverse().map((r) => `
             <article class="report" style="--a:#34d399">
@@ -311,8 +332,10 @@ export function createPanels({ feed, root, account = () => null, live = false })
     return `
       <div class="task-head" style="--a:${AREA[t.area].color}">
         <b>${esc(t.id)} · ${esc(t.title)}</b>
-        <small>${AREA[t.area].label} · ${esc(COLUMNS.find((c) => c.id === t.column)?.label || t.column)} · <code>${esc(t.branch)}</code>${t.cost ? ` · ${usd(t.cost)}` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${prLink(t.pr)}</small>
+        <small>${AREA[t.area].label} · ${esc(COLUMNS.find((c) => c.id === t.column)?.label || t.column)} · ${t.alreadyDone ? 'já existia no app · sem branch' : `<code>${esc(t.branch)}</code>`}${t.cost ? ` · ${usd(t.cost)}` : ''}${t.released ? ` · ${esc(t.released)} em produção` : ''}${prLink(t.pr)}</small>
       </div>
+      ${t.body ? `<div class="ov-floor">O que é</div><p class="task-desc">${esc(t.body)}</p>` : ''}
+      ${t.criteria ? `<div class="ov-floor">Critérios de aceite (P.O)</div><p class="task-desc">${esc(t.criteria)}</p>` : ''}
       ${t.blocked && feed.unblock ? `<div class="task-blocked"><span>Task parada: ${t.rework > 1 ? `voltou ${t.rework} vezes` : 'um robô travou'}. Veja a linha do tempo e destrave quando quiser que siga.</span><button data-unblock="${esc(t.id)}">Destravar e tentar de novo</button></div>` : ''}
       <ol class="timeline">${(t.timeline || []).map((e) => `<li><time>${fmtTime(new Date(e.ts))}</time><b>${e.robotId === 'VOCÊ' ? 'VOCÊ' : who(e.robotId)}</b> ${esc(e.text)}</li>`).join('')}</ol>
       ${t.commits?.length ? `<div class="ov-floor">Commits</div><ul class="changes one">${t.commits.map((c) => `<li><code>${esc(c.sha.slice(0, 7))}</code> ${esc(c.message)}</li>`).join('')}</ul>` : ''}`;

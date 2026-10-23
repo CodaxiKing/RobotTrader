@@ -116,6 +116,16 @@ e onde (arquivo), "area": "web"|"app"}; se não achar nada novo que valha a pena
 componente pelo nome e pelo assunto (em português e em inglês). Só conta como implementada se a tela existe e funciona,
 não um esboço vazio. Responda SOMENTE com JSON: {"implemented": boolean, "evidence": string com o arquivo, ou ""}.`,
   },
+  existsCheck: {
+    tools: ['Read', 'Glob', 'Grep'],
+    deny: ['Edit', 'Write', 'Bash'],
+    maxTurns: 20,
+    prompt: `Você confere se a funcionalidade pedida por uma task do board já está implementada no PetLive (monorepo:
+apps/tutor em Expo/React Native, apps/web em Next.js, supabase/ no backend). Procure a rota, a tela, o componente, o
+serviço ou o endpoint pelo nome e pelo assunto, em português e em inglês. Só conta como implementada se a funcionalidade
+existe e funciona de verdade, não um esboço vazio nem uma tela sem a lógica por trás. Responda SOMENTE com JSON:
+{"implemented": boolean, "evidence": string com o arquivo (ou arquivos) que prova, ou ""}.`,
+  },
   script: {
     tools: [],
     deny: ['Edit', 'Write', 'Bash'],
@@ -153,9 +163,14 @@ export function parseJson(text) {
 // ai(): a IA escolhida agora, { provider: 'claude' | 'opencode', model }; muda sem reiniciar o motor
 export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = () => ({ provider: 'claude', model }) }) {
   const opencode = createOpenCode({ roles: ROLES, suffix: PT_BR, log });
+  // ensaio rápido para os testes (MOTOR_DRY_FAST=1): sem espera e com custo fixo
+  const dryFast = () => process.env.MOTOR_DRY_FAST === '1';
+  // testes podem forçar o ensaio em vez de depender do sorte: MOTOR_DRY_EXISTS=1|0, MOTOR_DRY_FAIL=1|0
+  const envBool = (k) => (process.env[k] == null ? null : process.env[k] === '1');
   // ensaio: um plano de mentira que enche 3% por agente e renova 20 s depois de acabar, para ver a espera
   const fake = { used: 70, resetsAt: Date.now() + 10 * 60e3 };
   function fakeSpend() {
+    if (dryFast()) { fake.used = (fake.used + 3) % 60; return; }
     if (Date.now() > fake.resetsAt) Object.assign(fake, { used: 0, resetsAt: Date.now() + 10 * 60e3 });
     if (fake.used >= 100) throw new PlanLimitError(fake.resetsAt, 'ensaio');
     fake.used = Math.min(100, fake.used + 3);
@@ -168,6 +183,19 @@ export function createAgents({ model, budgets, dryRun, log, onRateLimit, ai = ()
     const chosen = ai();
     if (dryRun) { if (chosen.provider === 'claude') fakeSpend(); return dryRunAnswer(role, prompt); }
     if (chosen.provider === 'opencode') return opencode.run(role, { prompt, cwd, model: chosen.model, signal });
+    // erro transitório (API oscilando, rede): uma tentativa nova antes de travar a task; o limite
+    // do plano nunca entra aqui (é PlanLimitError, que estaciona a task e espera renovar)
+    const TRANSIENT = /overloaded|rate.?limit|timed? ?out|timeout|ECONNRESET|ECONNREFUSED|socket hang up|fetch failed|529|503|502/i;
+    for (let attempt = 0; ; attempt++) {
+      try { return await claudeOnce(role, { prompt, cwd, cfg, chosen, budget, signal }); }
+      catch (err) {
+        if (err.planLimit || attempt || !TRANSIENT.test(`${err.message} ${err.subtype || ''}`)) throw err;
+        log(`${role}: falhou (${err.message.slice(0, 120)}) · tentando de novo em 10 s`);
+        await new Promise((r) => setTimeout(r, 10000));
+      }
+    }
+  }
+  async function claudeOnce(role, { prompt, cwd, cfg, chosen, budget, signal }) {
     const controller = new AbortController();
     signal?.addEventListener('abort', () => controller.abort());
     let result = null;
@@ -230,22 +258,35 @@ ${PT_BR}` },
     return { hook, body, cta, caption: `${hook}\n\n${body}\n\n👉 ${cta}`, hashtags: ['#petlive', '#pets', '#tutordepet'] };
   }
   async function dryRunAnswer(role, prompt = '') {
-    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2500));
-    const cost = 0.01 + Math.random() * 0.03;
+    await new Promise((r) => setTimeout(r, dryFast() ? 0 : 1500 + Math.random() * 2500));
+    const cost = dryFast() ? 0.01 : 0.01 + Math.random() * 0.03;
+    const exists = envBool('MOTOR_DRY_EXISTS');
+    const fail = envBool('MOTOR_DRY_FAIL');
     const answers = {
       po: '- A tela segue o artboard do canvas\n- Campos obrigatórios validados\n- Estado vazio e de erro tratados',
       dev: 'Implementei a tela, os testes e ajustei o lint (ensaio).',
-      sec: JSON.stringify(Math.random() < 0.25
-        ? { ok: false, findings: [{ severity: 'média', title: 'Rota sem checagem de permissão (ensaio)', fix: 'Exigir o papel certo no middleware.', file: 'src/api/route.ts' }] }
-        : { ok: true, findings: [] }),
-      qa: JSON.stringify(Math.random() < 0.2
-        ? { ok: false, total: 30, passed: 28, failed: 2, summary: 'Dois testes falharam (ensaio).', problems: ['validação do formulário'] }
-        : { ok: true, total: 30, passed: 30, failed: 0, summary: 'Todos os testes passaram (ensaio).', problems: [] }),
+      sec: JSON.stringify(fail == null
+        ? (Math.random() < 0.25
+          ? { ok: false, findings: [{ severity: 'média', title: 'Rota sem checagem de permissão (ensaio)', fix: 'Exigir o papel certo no middleware.', file: 'src/api/route.ts' }] }
+          : { ok: true, findings: [] })
+        : (fail
+          ? { ok: false, findings: [{ severity: 'média', title: 'Rota sem checagem de permissão (ensaio)', fix: 'Exigir o papel certo no middleware.', file: 'src/api/route.ts' }] }
+          : { ok: true, findings: [] })),
+      qa: JSON.stringify(fail == null
+        ? (Math.random() < 0.2
+          ? { ok: false, total: 30, passed: 28, failed: 2, summary: 'Dois testes falharam (ensaio).', problems: ['validação do formulário'] }
+          : { ok: true, total: 30, passed: 30, failed: 0, summary: 'Todos os testes passaram (ensaio).', problems: [] })
+        : (fail
+          ? { ok: false, total: 30, passed: 28, failed: 2, summary: 'Dois testes falharam (ensaio).', problems: ['validação do formulário'] }
+          : { ok: true, total: 30, passed: 30, failed: 0, summary: 'Todos os testes passaram (ensaio).', problems: [] })),
       chat: 'Estou em modo de ensaio: o motor não está chamando a API agora.',
       docs: 'Novidades: lembretes de vacina e cadastro do pet mais rápido. Correções de estabilidade.',
       // a próxima ideia de exemplo que ainda não está na lista do que já foi sugerido; acabou a lista, nada novo
       idea: JSON.stringify(DRY_IDEAS.find((i) => !prompt.includes(i.title)) || { none: true }),
       screenCheck: JSON.stringify(Math.random() < 0.3 ? { implemented: true, evidence: 'app/(tabs)/tela.tsx (ensaio)' } : { implemented: false, evidence: '' }),
+      existsCheck: JSON.stringify(exists == null
+        ? (Math.random() < 0.2 ? { implemented: true, evidence: 'apps/web/app/rota/page.tsx (ensaio)' } : { implemented: false, evidence: '' })
+        : { implemented: exists, evidence: exists ? 'apps/web/app/rota/page.tsx (ensaio forçado)' : '' }),
       script: JSON.stringify((({ hook, body, cta }) => ({ script: [{ t: '0-3s', scene: 'Close no pet', line: hook }, { t: '3-15s', scene: 'Print do app', line: body.split('. ')[0] }, { t: '15-25s', scene: 'Logo PetLive', line: cta }] }))(dryCopy(prompt))),
       copy: JSON.stringify(dryCopy(prompt)),
       critic: JSON.stringify({ scores: { gancho: 8, clareza: 8, marca: 7, cta: 8, formato: 8 }, feedback: 'Aumentar o logo no fim (ensaio).' }),

@@ -4,18 +4,28 @@ import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+// erro transitório (rate limit, rede, GitHub fora do ar): vale uma tentativa antes de travar a task
+const TRANSIENT = /rate limit|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|Could not resolve host|Connection reset|Connection refused|timed out|429|502|503|504/i;
 export function createGit({ dryRun, log }) {
-  function run(cmd, args, { cwd } = {}) {
+  async function run(cmd, args, { cwd } = {}) {
     if (dryRun) {
       log(`(dry-run) ${cmd} ${args.join(' ')}${cwd ? `  [${cwd}]` : ''}`);
-      return Promise.resolve('');
+      return '';
     }
-    return new Promise((resolve, reject) => {
-      execFile(cmd, args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
-        if (err) reject(new Error(`${cmd} ${args.join(' ')}: ${(stderr || err.message).trim()}`));
-        else resolve(stdout.trim());
-      });
-    });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await new Promise((resolve, reject) => {
+          execFile(cmd, args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+            if (err) reject(new Error(`${cmd} ${args.join(' ')}: ${(stderr || err.message).trim()}`));
+            else resolve(stdout.trim());
+          });
+        });
+      } catch (err) {
+        if (attempt || !TRANSIENT.test(err.message)) throw err;
+        log(`${cmd} deu ruim de vez (${err.message.slice(0, 120)}) · tentando de novo em 5 s`);
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
   }
   const git = (cwd, ...args) => run('git', args, { cwd });
   // repo.worktrees escolhe a pasta (caminho curto ajuda no Windows); senão, <repo>-worktrees ao lado
@@ -112,6 +122,13 @@ export function createGit({ dryRun, log }) {
     },
     async removeWorktree(repo, dir) {
       await git(repo.path, 'worktree', 'remove', '--force', dir).catch(() => {});
+    },
+    // a branch já entrou na base: apaga do remoto e do local, para não virar cemitério de branch
+    async deleteBranch(repo, branch) {
+      if (dryRun) { log(`(dry-run) git push --delete origin ${branch} · git branch -D ${branch}`); return; }
+      await run('git', ['push', '--delete', 'origin', branch], { cwd: repo.path })
+        .catch((err) => log(`branch ${branch}: já não existe no remoto (${err.message.slice(0, 100)})`));
+      await git(repo.path, 'branch', '-D', branch).catch(() => {});
     },
   };
 }

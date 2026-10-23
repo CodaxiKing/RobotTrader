@@ -76,8 +76,8 @@ const CRITERIA = {
   formato: 'O texto na tela está pequeno para o celular; aumente e corte palavras.',
 };
 
-// formas de divulgação que o MKT_LEAD pode propor
-const PROMOTIONS = [
+// formas de divulgação que o MKT_LEAD pode propor (simulação e motor)
+export const PROMOTIONS = [
   ['Impulsionar o melhor post com R$ 50 por 3 dias', 'O post com mais salvamentos alcança gente parecida com quem já engajou. Público: tutores de 25-45 anos num raio de 30 km.'],
   ['Parceria com 5 petshops do bairro', 'QR do PetLive no balcão e no cartão de banho; em troca, a loja aparece no mapa do app.'],
   ['Collab com um influenciador pet local', 'Um Reels mostrando o passeio com GPS e o QR da coleira, com código de convite.'],

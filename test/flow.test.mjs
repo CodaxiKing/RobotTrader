@@ -56,6 +56,7 @@ test('sugestão não vira task sem aprovação; aprovada vira, recusada não', (
   feed.approveIdea(yes.id);
   assert.equal(fromIdeas(), before + 1, 'aprovar não criou a task');
   assert.equal(feed.task(yes.taskId).column, 'todo');
+  assert.equal(feed.task(yes.taskId).body, yes.detail, 'a task perdeu a descrição da melhoria');
 });
 
 test('nada vai para produção sem o release aprovado', () => {

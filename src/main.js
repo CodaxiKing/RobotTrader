@@ -169,7 +169,10 @@ const statusPill = (pill, s) => {
   pill.className = `pill ${k}`;
   pill.textContent = k === 'paused' ? 'pausado' : STATUS_LABEL[s.status] || s.status;
 };
-const pendingCount = () => feed.ideas.filter((i) => i.status === 'aguardando').length;
+// o que espera você, separado: melhorias, canvas e release nas Aprovações; posts e divulgação no Marketing
+const isMktIdea = (i) => ['post', 'divulgação'].includes(i.focus);
+const pendingCount = () => feed.ideas.filter((i) => i.status === 'aguardando' && !isMktIdea(i)).length;
+const pendingMktCount = () => feed.ideas.filter((i) => i.status === 'aguardando' && isMktIdea(i)).length;
 
 const pipeline = $('pipeline');
 function renderSummary() {
@@ -181,13 +184,15 @@ function renderSummary() {
   pipeline.innerHTML = [['Backlog', count('todo', 'refining')], ['Dev', count('dev', 'rework')], ['Segurança', count('security')], ['QA', count('qa')]]
     .map(([k, n]) => `<span class="chip"><b>${n}</b> ${k}</span>`).join('<i class="arrow">→</i>');
   const pending = pendingCount();
-  for (const id of ['ideas-badge', 'm-badge']) {
+  const pendingMkt = pendingMktCount();
+  for (const [id, n] of [['ideas-badge', pending], ['mkt-badge', pendingMkt], ['m-badge', pendingMkt]]) {
     const badge = $(id);
-    badge.hidden = !pending;
-    badge.textContent = pending;
+    badge.hidden = !n;
+    badge.textContent = n;
   }
-  $('ideas-badge').title = `${pending} item(ns) esperando a sua decisão`;
-  $('m-approvals').hidden = !pending;
+  $('ideas-badge').title = `${pending} sugestão(ões) esperando a sua decisão`;
+  $('mkt-badge').title = `${pendingMkt} post(s) e divulgação(ões) esperando a sua decisão`;
+  $('m-approvals').hidden = !pending && !pendingMkt;
   // orçamento
   const spent = feed.spend?.today || 0;
   const budget = feed.budget || OFFICE.dailyBudgetUsd;
@@ -449,8 +454,8 @@ ovBody.addEventListener('click', async (e) => {
   const card = e.target.closest('[data-task]');
   if (card && overlayState?.kind !== 'task') openTask(card.dataset.task);
 });
-ovBody.addEventListener('input', (e) => { if (e.target.matches('[data-audit-q], [data-audit-kind]')) { overlayState.html = null; drawOverlay(); } });
-ovBody.addEventListener('change', (e) => { if (e.target.matches('[data-audit-kind]')) { overlayState.html = null; drawOverlay(); } });
+ovBody.addEventListener('input', (e) => { if (e.target.matches('[data-audit-q], [data-audit-kind], [data-board-q], [data-board-col]')) { overlayState.html = null; drawOverlay(); } });
+ovBody.addEventListener('change', (e) => { if (e.target.matches('[data-audit-kind], [data-board-col]')) { overlayState.html = null; drawOverlay(); } });
 
 // arrastar no Backlog muda a prioridade
 ovBody.addEventListener('dragstart', (e) => {
@@ -548,7 +553,7 @@ overlay.querySelector('.ov-close').onclick = closeOverlay;
 overlay.addEventListener('click', (e) => { if (e.target === overlay) closeOverlay(); });
 $('btn-screens').onclick = openGrid;
 for (const k of ['board', 'canvas', 'ideas', 'marketing', 'reports', 'releases', 'today', 'metrics', 'audit']) viewBtns[k].onclick = () => openPanel(k);
-$('m-approvals').onclick = () => openPanel('ideas', { toggle: false });
+$('m-approvals').onclick = () => openPanel(pendingCount() ? 'ideas' : 'marketing', { toggle: false });
 // lista lateral recolhível (começa fechada em telas estreitas para não cobrir o salão)
 const toggleSide = (open) => { sidebar.style.display = open ? '' : 'none'; $('btn-list').classList.toggle('on', open); };
 $('btn-list').onclick = () => toggleSide(sidebar.style.display === 'none');

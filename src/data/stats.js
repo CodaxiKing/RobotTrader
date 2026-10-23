@@ -15,7 +15,7 @@ const STAGES = [
 ];
 
 export function computeMetrics(feed) {
-  const merged = feed.board.filter((t) => t.column === 'merged' && t.mergedAt);
+  const merged = feed.board.filter((t) => t.column === 'merged' && t.mergedAt && !t.alreadyDone);
   const cycle = merged.map((t) => t.mergedAt - new Date(t.createdAt)).filter((v) => v > 0);
   const timeline = feed.board.flatMap((t) => t.timeline || []);
   const count = (re) => timeline.filter((e) => re.test(e.text)).length;
@@ -51,7 +51,8 @@ function marketingLine(feed) {
   const today = pieces.filter((p) => p.publishedAt && sameDay(new Date(p.publishedAt)));
   const reach = today.reduce((n, p) => n + (p.metrics?.reach || 0), 0);
   const waiting = pieces.filter((p) => p.stage === 'aprovação').length;
-  return `Marketing: ${today.length} post(s) publicado(s)${today.length ? `, ${reach.toLocaleString('pt-BR')} de alcance` : ''}; ${waiting} criativo(s) esperando você`;
+  const promos = (feed.ideas || []).filter((i) => i.focus === 'divulgação' && i.status === 'aguardando').length;
+  return `Marketing: ${today.length} post(s) publicado(s)${today.length ? `, ${reach.toLocaleString('pt-BR')} de alcance` : ''}; ${waiting} criativo(s) e ${promos} divulgação(ões) esperando você na aba Marketing`;
 }
 
 // Resumo do dia, em texto pronto para mandar (WhatsApp, e-mail)
@@ -59,13 +60,17 @@ export function buildToday(feed) {
   const m = computeMetrics(feed);
   const today = feed.reports.filter((r) => sameDay(r.ts));
   const returned = feed.board.filter((t) => t.rework > 0 && t.column !== 'merged');
-  const pending = feed.ideas.filter((i) => i.status === 'aguardando');
+  // posts e divulgação esperam na aba Marketing, não nas Aprovações
+  const pending = feed.ideas.filter((i) => i.status === 'aguardando' && !['post', 'divulgação'].includes(i.focus));
   const releases = (feed.releases || []).filter((r) => sameDay(r.ts));
   const incidents = (feed.incidents || []).filter((i) => sameDay(i.ts));
   const findings = today.reduce((n, r) => n + (r.security?.findings.length || 0), 0);
+  // o P.O marcou como Done sem implementar (já existia no app); não é entrega, mas o dono quer saber
+  const preDone = feed.board.filter((t) => t.alreadyDone && t.mergedAt && sameDay(new Date(t.mergedAt)));
   const lines = [
     `*PetLive · resumo de ${new Date().toLocaleDateString('pt-BR')}*`,
     `Entregues em ${OFFICE.baseBranch}: ${today.length}${today.length ? ` (${today.slice(-6).map((r) => r.title).join(', ')}${today.length > 6 ? '…' : ''})` : ''}`,
+    ...(preDone.length ? [`Já existiam no app (P.O marcou como Done, sem implementar): ${preDone.map((t) => t.id).join(', ')}`] : []),
     releases.length ? `Em produção: ${releases.map((r) => `${r.version} com ${r.tasks.length} entregas`).join('; ')}` : 'Nenhum release para produção hoje',
     `Segurança: ${findings} falha(s) achada(s) e corrigida(s) antes do merge`,
     incidents.length ? `Erros em produção: ${incidents.length} (${incidents.map((i) => i.error).slice(0, 2).join('; ')})` : 'Produção sem erros novos',

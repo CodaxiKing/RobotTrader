@@ -204,12 +204,12 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80, stora
     keep(canvas.changes, 40);
   };
 
-  function addTask(area, title, scope, from, { origin = from ? 'idea' : 'board', urgent = false, screen = null } = {}) {
+  function addTask(area, title, scope, from, { origin = from ? 'idea' : 'board', urgent = false, screen = null, body = '' } = {}) {
     const id = `#${++seq}`;
     const prefix = origin === 'security' || origin === 'ops' ? 'fix' : 'feat';
     const task = {
       id, title, area, scope, column: 'todo', dev: null, qa: null, branch: `${prefix}/${slug(title)}`,
-      commits: [], tests: null, rework: 0, findings: [], returnedBy: null, from, origin, screen,
+      commits: [], tests: null, rework: 0, findings: [], returnedBy: null, from, origin, screen, body,
       createdAt: new Date(), mergedAt: null, cost: 0, timeline: [], aligned: false, released: null,
     };
     const sc = screen && screenOf(screen);
@@ -717,12 +717,12 @@ export function createSimulatedFeed({ intervalMs = 1400, historySize = 80, stora
     const sc = idea.screen && screenOf(idea.screen);
     let t;
     if (sc && !idea.reopen) {
-      t = screenTask(sc, idea.by, { origin: 'idea' });
+      t = screenTask(sc, idea.by, { origin: 'idea', body: idea.detail });
       t.title = idea.title.replace(/^Implementar "(.*)"$/, '$1');
     } else {
       // tela que já existe (canvas mudou, dados, acessibilidade): task nova sem tirar a tela do lugar
       const area = idea.area || (/\b(app|react native)\b/i.test(`${idea.title} ${idea.detail}`) ? 'app' : 'web');
-      t = addTask(area, idea.title.replace(/^Nova tela: /, ''), sc ? slug(sc.file.replace(/\.dc\.html$/, '')) : idea.focus === 'dev' ? 'refactor' : 'ui', idea.by, { screen: sc?.file || null });
+      t = addTask(area, idea.title.replace(/^Nova tela: /, ''), sc ? slug(sc.file.replace(/\.dc\.html$/, '')) : idea.focus === 'dev' ? 'refactor' : 'ui', idea.by, { screen: sc?.file || null, body: idea.detail });
     }
     idea.taskId = t.id;
     push(idea.by, `Aprovada por você · virou ${t.id} no Backlog`, { taskId: t.id });

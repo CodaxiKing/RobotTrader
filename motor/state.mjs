@@ -4,13 +4,15 @@ import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ROBOTS } from '../src/data/robots.js';
 
-// MOTOR_STATE troca o arquivo (testes e ensaios sem mexer no estado do motor de verdade)
-const FILE = process.env.MOTOR_STATE || fileURLToPath(new URL('./state.json', import.meta.url));
+// MOTOR_STATE troca o arquivo (testes e ensaios sem mexer no estado do motor de verdade);
+// lido a cada criação, para cada teste poder apontar para o seu arquivo
+const defaultStateFile = () => process.env.MOTOR_STATE || fileURLToPath(new URL('./state.json', import.meta.url));
 const dayKey = () => new Date().toISOString().slice(0, 10);
 const keep = (list, max) => { if (list.length > max) list.splice(0, list.length - max); };
 const now = () => new Date().toISOString();
 
 export function createState({ budget }) {
+  const FILE = defaultStateFile();
   const fresh = {
     motor: true,
     updatedAt: now(),
@@ -19,7 +21,7 @@ export function createState({ budget }) {
     budget,
     spend: { day: dayKey(), today: 0, series: [] },
     deliveredTotal: 0,
-    robots: Object.fromEntries(ROBOTS.map((r) => [r.id, { status: 'idle', activity: 'Livre', taskId: null, progress: 0, done: 0, commits: 0, cost: 0, paused: false }])),
+    robots: Object.fromEntries(ROBOTS.map((r) => [r.id, { status: 'idle', activity: 'Livre', taskId: null, progress: 0, done: 0, commits: 0, cost: 0, costToday: 0, paused: false }])),
     board: [], reports: [], ideas: [], releases: [], changelog: [], incidents: [], insights: [],
     marketing: { pieces: [], promotions: [] },
     alerts: [], audit: [], events: [], meeting: null, canvas: null,
@@ -91,8 +93,19 @@ export function createState({ budget }) {
     setRobot(id, patch) { Object.assign(s.robots[id], patch); changed(); },
     // custo real de um agente (total_cost_usd); devolve true se o orçamento do dia estourou
     charge(robotId, usd, task = null) {
-      if (s.spend.day !== dayKey()) s.spend = { day: dayKey(), today: 0, series: [] };
+      if (s.spend.day !== dayKey()) {
+        // trocou o dia: zera o gasto do dia (cost é o acumulado, só para as métricas) e quem
+        // parou no teto do dia volta sozinho — o teto é diário, não para sempre
+        s.spend = { day: dayKey(), today: 0, series: [] };
+        const voltaram = [];
+        for (const [id, r] of Object.entries(s.robots)) {
+          r.costToday = 0;
+          if (r.paused && r.pausedBy === 'teto') { r.paused = false; r.pausedBy = null; voltaram.push(id); }
+        }
+        if (voltaram.length) api.push('OPS_01', `Novo dia: o teto do dia zerou e ${voltaram.join(', ')} voltaram a trabalhar`);
+      }
       s.robots[robotId].cost += usd;
+      s.robots[robotId].costToday = (s.robots[robotId].costToday || 0) + usd;
       s.spend.today += usd;
       if (task) task.cost = (task.cost || 0) + usd;
       s.spend.series.push(Number(s.spend.today.toFixed(4)));

@@ -208,7 +208,7 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
       case 'ops': return [
         statPanel('Operações · produção', () => {
           const last = feed.releases?.at(-1);
-          const waiting = feed.board.filter((t) => t.column === 'merged' && !t.released).length;
+          const waiting = feed.board.filter((t) => t.column === 'merged' && !t.released && !t.alreadyDone).length;
           return { title: `PRODUÇÃO · ${OFFICE.productionBranch.toUpperCase()}`, value: last ? last.version : 'sem release', sub: `${waiting} entrega(s) em ${OFFICE.baseBranch} esperando release` };
         }, 'releases'),
         { title: 'Produção e changelog', open: 'releases', draw: (ctx, w, h) => drawWallList(ctx, w, h, 'ERROS · CHANGELOG', [
@@ -221,7 +221,8 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
           const pieces = feed.marketing?.pieces || [];
           const live = pieces.filter((p) => p.metrics);
           const reach = live.reduce((n, p) => n + p.metrics.reach, 0);
-          const waiting = pieces.filter((p) => p.stage === 'aprovação').length;
+          const waiting = pieces.filter((p) => p.stage === 'aprovação').length
+            + feed.ideas.filter((i) => i.focus === 'divulgação' && i.status === 'aguardando').length;
           return { title: 'MARKETING · PUBLICADOS', value: String(live.length), sub: `${reach.toLocaleString('pt-BR')} de alcance · ${waiting} esperando você` };
         }, 'marketing'),
         { title: 'Próximos posts', open: 'marketing', draw: (ctx, w, h) => drawWallList(ctx, w, h, 'PRÓXIMOS POSTS',
@@ -234,8 +235,12 @@ export function buildWorld(scene, floors, robots, { feed, camera }) {
         { title: 'Últimos relatórios', open: 'reports', draw: (ctx, w, h) => drawWallList(ctx, w, h, 'ÚLTIMOS RELATÓRIOS', feed.reports.map((r) => ({ tag: r.taskId, color: AREA[r.area].color, text: `${r.title} · ${r.tests.passed}/${r.tests.total}` }))) },
       ];
       default: return [
-        statPanel('Melhorias · aguardando você', () => ({ title: 'MELHORIAS · AGUARDANDO VOCÊ', value: String(feed.ideas.filter((i) => i.status === 'aguardando').length), sub: `${feed.ideas.filter((i) => i.status === 'aprovada').length} aprovadas · ${people(F)}` }), 'ideas'),
-        { title: 'Últimas sugestões', open: 'ideas', draw: (ctx, w, h) => drawWallList(ctx, w, h, 'ÚLTIMAS SUGESTÕES', feed.ideas.map((i) => ({ tag: FOCUS[i.focus].label, color: FOCUS[i.focus].color, text: `${i.status === 'aguardando' ? '⏳' : i.status === 'aprovada' ? '✔' : '✕'} ${i.title}` }))) },
+        // posts e divulgação são da agência: contam no painel do Marketing, não nas melhorias
+        statPanel('Melhorias · aguardando você', () => {
+          const ideas = feed.ideas.filter((i) => !['post', 'divulgação'].includes(i.focus));
+          return { title: 'MELHORIAS · AGUARDANDO VOCÊ', value: String(ideas.filter((i) => i.status === 'aguardando').length), sub: `${ideas.filter((i) => i.status === 'aprovada').length} aprovadas · ${people(F)}` };
+        }, 'ideas'),
+        { title: 'Últimas sugestões', open: 'ideas', draw: (ctx, w, h) => drawWallList(ctx, w, h, 'ÚLTIMAS SUGESTÕES', feed.ideas.filter((i) => !['post', 'divulgação'].includes(i.focus)).map((i) => ({ tag: FOCUS[i.focus].label, color: FOCUS[i.focus].color, text: `${i.status === 'aguardando' ? '⏳' : i.status === 'aprovada' ? '✔' : '✕'} ${i.title}` }))) },
       ];
     }
   }

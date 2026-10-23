@@ -18,6 +18,7 @@ export const FOCUS = {
   a11y: { label: 'Acessibilidade', color: '#a78bfa' },
   data: { label: 'Dados', color: '#fbbf24' },
   release: { label: 'Release', color: '#34d399' },
+  ops: { label: 'Erro em produção', color: '#ef4444' },
   post: { label: 'Post', color: '#fb7185' },
   'divulgação': { label: 'Divulgação', color: '#f472b6' },
 };
